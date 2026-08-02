@@ -27,7 +27,9 @@ import com.booksaw.betterTeams.events.MCTeamManagement.BelowNameType;
 import com.booksaw.betterTeams.extension.ExtensionManager;
 import com.booksaw.betterTeams.luniatic.duelo.DueloCommand;
 import com.booksaw.betterTeams.luniatic.duelo.DueloDamageListener;
+import com.booksaw.betterTeams.luniatic.duelo.DueloBossBar;
 import com.booksaw.betterTeams.luniatic.duelo.DueloDeathListener;
+import com.booksaw.betterTeams.luniatic.duelo.DueloPlaceholders;
 import com.booksaw.betterTeams.luniatic.duelo.DueloManager;
 import com.booksaw.betterTeams.luniatic.gui.MenuCommand;
 import com.booksaw.betterTeams.luniatic.gui.MenuListener;
@@ -474,7 +476,16 @@ public class Main extends JavaPlugin {
 			if (dueloManager.isPisaPvpIndividual()) {
 				getServer().getPluginManager().registerEvents(new DueloDamageListener(dueloManager), this);
 			}
-			getLogger().info("Duelos pactados: activos.");
+			if (dueloManager.isBarraActiva()) {
+				DueloBossBar barra = new DueloBossBar(dueloManager);
+				dueloManager.setBarra(barra);
+				getServer().getPluginManager().registerEvents(barra, this);
+			}
+			if (placeholderAPI) {
+				new DueloPlaceholders(dueloManager).register();
+			}
+			getLogger().info("Duelos pactados: activos"
+					+ (dueloManager.isPisaPvpIndividual() ? ", con override de PvP." : "."));
 		}
 
 		getServer().getPluginManager().registerEvents(new MenuListener(), this);

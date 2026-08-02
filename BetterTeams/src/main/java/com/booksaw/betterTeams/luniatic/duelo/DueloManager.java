@@ -37,6 +37,9 @@ public class DueloManager {
 	private final boolean pisaPvpIndividual;
 	private final boolean avisoGlobal;
 	private final int objetivoBajas;
+	private final boolean barraActiva;
+	private final String avisoTab;
+	private DueloBossBar barra;
 
 	/** Desafios sin aceptar, indexados por el clan retado. */
 	private final Map<UUID, Desafio> desafios = new HashMap<>();
@@ -53,6 +56,8 @@ public class DueloManager {
 			pisaPvpIndividual = false;
 			avisoGlobal = false;
 			objetivoBajas = 0;
+			barraActiva = false;
+			avisoTab = "";
 			return;
 		}
 		habilitado = seccion.getBoolean("enabled", false);
@@ -63,10 +68,48 @@ public class DueloManager {
 		pisaPvpIndividual = seccion.getBoolean("pisa-pvp-individual", false);
 		avisoGlobal = seccion.getBoolean("aviso-global", false);
 		objetivoBajas = Math.max(1, seccion.getInt("objetivo-bajas", 10));
+		barraActiva = seccion.getBoolean("barra", true);
+		avisoTab = seccion.getString("aviso-tab", "&#FF4554PvP forzado por duelo");
+	}
+
+	public String getAvisoTab() {
+		return avisoTab;
 	}
 
 	public int getObjetivoBajas() {
 		return objetivoBajas;
+	}
+
+	public boolean isBarraActiva() {
+		return barraActiva;
+	}
+
+	public void setBarra(DueloBossBar barra) {
+		this.barra = barra;
+	}
+
+	/** Los clanes con un duelo en curso, sin repetir. */
+	public List<Team> getClanesEnDuelo() {
+		List<Team> clanes = new ArrayList<>();
+		for (UUID id : enCurso.keySet()) {
+			Team clan = Team.getTeam(id);
+			if (clan != null) {
+				clanes.add(clan);
+			}
+		}
+		return clanes;
+	}
+
+	private void dibujar(Team clan) {
+		if (barra != null) {
+			barra.refrescar(clan);
+		}
+	}
+
+	private void borrarBarra(Team clan) {
+		if (barra != null) {
+			barra.quitar(clan);
+		}
 	}
 
 	public boolean isHabilitado() {
@@ -183,6 +226,9 @@ public class DueloManager {
 			MessageManager.sendMessage(new ArrayList<>(Main.plugin.getServer().getOnlinePlayers()),
 					"duelo.aviso_global", unClan.getName(), otroClan.getName());
 		}
+
+		dibujar(unClan);
+		dibujar(otroClan);
 		return Resultado.ok("duelo.arranco_confirmacion", unClan.getName());
 	}
 
@@ -236,6 +282,8 @@ public class DueloManager {
 		String marcador = bajas + "/" + objetivoBajas;
 		avisar(clanCaido, "duelo.marcador_propio", marcador, clanAtacante.getName());
 		avisar(clanAtacante, "duelo.marcador_rival", clanCaido.getName(), marcador);
+		dibujar(clanCaido);
+		dibujar(clanAtacante);
 	}
 
 	/** Revisa vencimientos. La llama una tarea repetitiva, no cada evento. */
@@ -253,6 +301,11 @@ public class DueloManager {
 		for (Duelo duelo : terminados) {
 			cerrar(duelo);
 			resolverPorTiempo(duelo);
+		}
+
+		// Lo unico que mueve el reloj de la barra. No hace falta mas seguido.
+		if (barra != null) {
+			barra.refrescarTodos();
 		}
 	}
 
@@ -292,6 +345,9 @@ public class DueloManager {
 			devolver(duelo, "duelo.cancelado_apagado");
 		}
 		desafios.clear();
+		if (barra != null) {
+			barra.quitarTodas();
+		}
 	}
 
 	private void devolver(Duelo duelo, String referencia) {
@@ -307,9 +363,12 @@ public class DueloManager {
 		}
 	}
 
+	/** Punto unico de cierre, asi ninguna salida se olvida de sacar la barra. */
 	private void cerrar(Duelo duelo) {
 		enCurso.remove(duelo.getClanA());
 		enCurso.remove(duelo.getClanB());
+		borrarBarra(Team.getTeam(duelo.getClanA()));
+		borrarBarra(Team.getTeam(duelo.getClanB()));
 	}
 
 	private void pagar(Team clan, double monto) {

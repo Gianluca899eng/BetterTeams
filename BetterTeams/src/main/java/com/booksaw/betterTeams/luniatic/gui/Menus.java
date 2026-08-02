@@ -4,12 +4,10 @@ import com.booksaw.betterTeams.Main;
 import com.booksaw.betterTeams.PlayerRank;
 import com.booksaw.betterTeams.Team;
 import com.booksaw.betterTeams.TeamPlayer;
+import com.booksaw.betterTeams.luniatic.Texto;
 import com.booksaw.betterTeams.luniatic.duelo.Desafio;
 import com.booksaw.betterTeams.luniatic.duelo.Duelo;
 import com.booksaw.betterTeams.luniatic.duelo.DueloManager;
-import com.booksaw.betterTeams.text.Formatter;
-import com.booksaw.betterTeams.text.LegacyTextUtils;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -74,15 +72,6 @@ public final class Menus {
 	private static final String ETIQUETA = "&#7162FF";
 	private static final String ERROR = "&#FF4554";
 
-	/**
-	 * Con hexColors(), o la paleta se aplasta a los 16 colores viejos. Y con el
-	 * formato "x repetida" ({@code §x§9§2§3§5§F§F}), que es el unico que entiende
-	 * el cliente: el {@code §#9235ff} que sale por defecto se muestra como texto.
-	 */
-	private static final LegacyComponentSerializer LEGACY_HEX = LegacyComponentSerializer.builder()
-			.hexColors()
-			.useUnusualXRepeatedCharacterHexFormat()
-			.build();
 
 	private Menus() {
 	}
@@ -1101,12 +1090,12 @@ public final class Menus {
 	 * la paleta termina saliendo del mismo azul. Comprobado.
 	 */
 	static String col(String texto) {
-		return LEGACY_HEX.serializeOr(Formatter.absolute().process(LegacyTextUtils.toAdventure(texto)), "");
+		return Texto.col(texto);
 	}
 
 	/** Saca el color de un texto, para usarlo dentro de otro que ya tiene color. */
 	private static String limpiar(String texto) {
-		return org.bukkit.ChatColor.stripColor(col(texto));
+		return Texto.limpiar(texto);
 	}
 
 	private static String rango(PlayerRank rango) {
