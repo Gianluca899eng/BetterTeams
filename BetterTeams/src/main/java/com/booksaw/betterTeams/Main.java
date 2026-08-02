@@ -222,6 +222,19 @@ public class Main extends JavaPlugin {
 			temp.getValue().saveEchest();
 		}
 
+		// El echest solo se guardaba al cerrarlo, y aca solo se cerraban los que
+		// estaba mirando un admin. Un jugador comun con el cofre de su clan abierto
+		// cuando se apaga el servidor sacaba items que quedaban en los dos lados:
+		// en su inventario, que Minecraft si guarda, y en el cofre, que no se
+		// guardaba. Guardar todos al apagar cierra esa ventana.
+		for (Team equipo : Team.getTeamManager().getLoadedTeamListClone().values()) {
+			try {
+				equipo.saveEchest();
+			} catch (Exception e) {
+				getLogger().warning("No se pudo guardar el cofre de " + equipo.getName() + ": " + e.getMessage());
+			}
+		}
+
 		if (useHolograms) {
 			HologramManager.holoManager.disable();
 		}

@@ -368,7 +368,9 @@ public final class Menus {
 					"",
 					mando ? MARCA + "Clic izquierdo: aceptar" : CUERPO + "Solo lider y colider responden",
 					mando ? ERROR + "Clic derecho: rechazar" : ""));
-			if (mando) {
+			// Un nombre con espacios correria el monto a otro argumento. Hoy no puede
+			// pasar, pero depende de una config que alguien puede vaciar.
+			if (mando && argumentoSeguro(nombre)) {
 				holder.asignarConClic(CONTENIDO[i],
 						j -> abrirConfirmacion(j, "Aceptar el duelo",
 								new String[]{
@@ -461,6 +463,15 @@ public final class Menus {
 				"",
 				CUERPO + "El otro clan tiene que aceptar el mismo",
 				CUERPO + "monto para que arranque."));
+
+		if (!argumentoSeguro(nombreRival)) {
+			// Ver argumentoSeguro: con espacios en el nombre, el monto se corre.
+			inv.setItem(CABECERA, boton(Material.BARRIER, ERROR + "Ese clan no se puede desafiar",
+					CUERPO + "Su nombre tiene caracteres que rompen el comando."));
+			volverA(inv, holder, j -> abrirElegirRival(j, 0));
+			jugador.openInventory(inv);
+			return;
+		}
 
 		int[] opciones = {0, 100, 1000, 10000};
 		Material[] iconos = {Material.PAPER, Material.GOLD_NUGGET, Material.GOLD_INGOT, Material.GOLD_BLOCK};
@@ -1179,7 +1190,40 @@ public final class Menus {
 	/** Cierra el menu y ejecuta. Para lo que saca al jugador de la pantalla. */
 	private static void comando(Player jugador, String comando) {
 		jugador.closeInventory();
-		jugador.performCommand(comando);
+		if (seguro(jugador, comando)) {
+			jugador.performCommand(comando);
+		}
+	}
+
+	/**
+	 * Que el comando armado sea un solo comando.
+	 *
+	 * <p>Los botones interpolan nombres de clan y de jugador en una linea de
+	 * comando. Hoy no hay riesgo porque {@code allowedChars} deja los nombres en
+	 * alfanumerico puro, pero eso es una config que alguien puede vaciar —su propio
+	 * comentario dice que en blanco permite todo—, y ahi un nombre con espacios
+	 * correria los argumentos: un clan llamado "x 999999" convertiria una apuesta de
+	 * 1 en otra cosa. Se valida al armar, no se confia en la config.
+	 */
+	private static boolean seguro(Player jugador, String comando) {
+		if (comando.indexOf('\n') >= 0 || comando.indexOf('\r') >= 0) {
+			mensaje(jugador, ERROR + "Ese nombre tiene caracteres que no se pueden usar.");
+			return false;
+		}
+		return true;
+	}
+
+	/** Un argumento que se interpola en un comando: sin espacios ni saltos. */
+	private static boolean argumentoSeguro(String valor) {
+		if (valor == null || valor.isEmpty()) {
+			return false;
+		}
+		for (int i = 0; i < valor.length(); i++) {
+			if (Character.isWhitespace(valor.charAt(i))) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -1190,7 +1234,9 @@ public final class Menus {
 	 * plugin si algo no se puede.
 	 */
 	private static void ejecutarYVolver(Player jugador, String comando, Runnable volverADibujar) {
-		jugador.performCommand(comando);
+		if (seguro(jugador, comando)) {
+			jugador.performCommand(comando);
+		}
 		volverADibujar.run();
 	}
 
