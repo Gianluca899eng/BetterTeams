@@ -710,9 +710,9 @@ duelo:
   # con las caidas propias, o sea que mide cuanto falta para perder.
   barra: true
 
-  # Aviso para la lista del tab cuando el override esta encendido y hay duelo en
-  # curso. Se lee con el placeholder %luniaticclanes_aviso_pvp%.
-  aviso-tab: '&#FF4554PvP forzado por duelo'
+  # Aviso cuando el override esta encendido y hay duelo en curso. Pensado para
+  # pegarse a la linea de PvP del scoreboard, con %luniaticclanes_aviso_pvp%.
+  aviso-tab: ' &e- FORZADO'
 
 # Debug options:
 

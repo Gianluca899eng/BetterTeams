@@ -38,6 +38,8 @@ public class DueloBossBar implements Listener {
 
 	private static final String CUERPO = "&#E4D9FF";
 	private static final String MARCA = "&#9235FF";
+	/** Separa las tres partes sin gastar el ancho que gastaban los espacios. */
+	private static final String SEPARADOR = " &#7162FF| ";
 
 	private final DueloManager manager;
 	private final Map<UUID, BossBar> barras = new HashMap<>();
@@ -67,21 +69,23 @@ public class DueloBossBar implements Listener {
 		long minutos = duelo.segundosRestantes(System.currentTimeMillis()) / 60;
 		String nombreRival = rival == null ? "?" : Texto.limpiar(rival.getName());
 
-		// Al aliado hay que decirle de quien es el duelo: el no lo pacto, y su barra
-		// tiene que explicarle por que de golpe lo pueden matar.
+		// Corto a proposito: la barra se lee de reojo en medio de una pelea. El
+		// marcador y el reloj van sin etiqueta —se entienden por la forma— y el
+		// separador ocupa menos que los espacios que tenia antes.
 		String encabezado;
 		if (duelo.esPrincipal(clan.getID())) {
-			encabezado = CUERPO + "Duelo contra " + MARCA + nombreRival;
+			encabezado = CUERPO + "Duelo vs " + MARCA + nombreRival;
 		} else {
+			// Al aliado hay que decirle de quien es el duelo: el no lo pacto.
 			Team principal = Team.getTeam(duelo.getPrincipalDe(clan.getID()));
-			encabezado = CUERPO + "Apoyando a " + MARCA
+			encabezado = CUERPO + "Apoyo a " + MARCA
 					+ (principal == null ? "?" : Texto.limpiar(principal.getName()))
-					+ CUERPO + " contra " + MARCA + nombreRival;
+					+ CUERPO + " vs " + MARCA + nombreRival;
 		}
 
 		String titulo = Texto.col(encabezado
-				+ CUERPO + "   caidas " + MARCA + propias + CUERPO + " - " + MARCA + ajenas
-				+ CUERPO + "   quedan " + MARCA + minutos + CUERPO + " min");
+				+ SEPARADOR + MARCA + propias + CUERPO + "-" + MARCA + ajenas
+				+ SEPARADOR + MARCA + minutos + CUERPO + "m");
 		double progreso = Math.min(1.0, propias / (double) objetivo);
 
 		for (Player jugador : conectados) {
