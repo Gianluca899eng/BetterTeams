@@ -28,6 +28,8 @@ import com.booksaw.betterTeams.extension.ExtensionManager;
 import com.booksaw.betterTeams.luniatic.duelo.DueloCommand;
 import com.booksaw.betterTeams.luniatic.duelo.DueloDamageListener;
 import com.booksaw.betterTeams.luniatic.duelo.DueloManager;
+import com.booksaw.betterTeams.luniatic.gui.MenuCommand;
+import com.booksaw.betterTeams.luniatic.gui.MenuListener;
 import com.booksaw.betterTeams.integrations.UltimateClaimsManager;
 import com.booksaw.betterTeams.integrations.WorldGuardManagerV7;
 import com.booksaw.betterTeams.integrations.apollo.ApolloManager;
@@ -376,6 +378,8 @@ public class Main extends JavaPlugin {
 		if (dueloManager.isHabilitado()) {
 			teamCommand.addSubCommand(new DueloCommand(dueloManager));
 		}
+
+		teamCommand.addSubCommand(new MenuCommand());
 		// only used if a team is only allowed a single owner
 		if (getConfig().getBoolean("singleOwner")) {
 			teamCommand.addSubCommand(new SetOwnerCommand());
@@ -470,6 +474,8 @@ public class Main extends JavaPlugin {
 			}
 			getLogger().info("Duelos pactados: activos.");
 		}
+
+		getServer().getPluginManager().registerEvents(new MenuListener(), this);
 
 		getServer().getPluginManager().registerEvents((chatManagement = new ChatManagement()), this);
 		getServer().getPluginManager().registerEvents(new ScoreManagement(), this);
