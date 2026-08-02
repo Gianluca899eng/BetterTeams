@@ -62,7 +62,9 @@ public class DueloPlaceholders extends PlaceholderExpansion {
 			case "pvp_forzado":
 				// Para la condicion de TAB: cuando esto es "si", la linea de PvP del
 				// scoreboard muestra el estado forzado en vez del toggle personal.
-				return duelo != null && manager.isPisaPvpIndividual() ? "si" : "no";
+				// Mira tambien DONDE esta parado: adentro de un claim el duelo no
+				// aplica, y decir "forzado" ahi seria mentir sobre si te pueden matar.
+				return manager.pvpForzadoAca(jugador.getPlayer()) ? "si" : "no";
 			case "aviso_pvp":
 				// Solo cuando el aviso significa algo: hay duelo y el override manda.
 				if (duelo == null || !manager.isPisaPvpIndividual()) {

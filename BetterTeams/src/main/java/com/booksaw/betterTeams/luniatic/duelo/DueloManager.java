@@ -50,6 +50,7 @@ public class DueloManager {
 	private final boolean arrastraAliados;
 	private final boolean debug;
 	private DueloBossBar barra;
+	private GuardiaRegion guardia;
 
 	/**
 	 * Desafios sin aceptar: clan retado -> (clan retador -> desafio).
@@ -94,6 +95,38 @@ public class DueloManager {
 	/** Logs de por que el override no destapo un dano. Apagado salvo diagnostico. */
 	public boolean isDebug() {
 		return debug;
+	}
+
+	public void setGuardia(GuardiaRegion guardia) {
+		this.guardia = guardia;
+	}
+
+	public GuardiaRegion getGuardia() {
+		return guardia;
+	}
+
+	/**
+	 * Si al jugador lo pueden matar acá por estar en duelo, aca y ahora.
+	 *
+	 * <p>Mira tres cosas, y las tres tienen que dar: que su clan este en duelo, que
+	 * el override este encendido, y que <b>en el lugar donde esta parado</b>
+	 * WorldGuard permita PvP.
+	 *
+	 * <p>🔑 <b>Lo tercero es lo que hace honesto al cartel.</b> Los claims de
+	 * ProtectionStones traen {@code pvp deny}, asi que adentro de una proteccion el
+	 * duelo no aplica —a proposito— y decir "forzado" ahi seria mentir justo sobre
+	 * si te pueden matar. La consulta a WorldGuard solo se hace si las dos primeras
+	 * ya dieron, o sea casi nunca.
+	 */
+	public boolean pvpForzadoAca(Player jugador) {
+		if (!habilitado || !pisaPvpIndividual || jugador == null) {
+			return false;
+		}
+		Duelo duelo = getDuelo(Team.getTeam(jugador));
+		if (duelo == null) {
+			return false;
+		}
+		return guardia == null || guardia.permitePvp(jugador.getLocation());
 	}
 
 	public boolean isArrastraAliados() {
