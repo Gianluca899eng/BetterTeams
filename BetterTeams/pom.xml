@@ -179,6 +179,15 @@
                         <arg>-Xlint:deprecation</arg>
                         <arg>-Xlint:unchecked</arg>
                     </compilerArgs>
+                    <!-- Desde JDK 23 javac no ejecuta procesadores que solo esten en el
+                         classpath, asi que Lombok se declara explicitamente aca. -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
             <plugin>
@@ -186,7 +195,10 @@
                 <artifactId>maven-jar-plugin</artifactId>
                 <version>3.5.0</version>
                 <configuration>
-                    <outputDirectory>${maven.multiModuleProjectDirectory}/server/plugins</outputDirectory>
+                    <!-- Upstream lo mandaba a <proyecto>/server/plugins, que Maven resuelve
+                         desde el directorio de trabajo y no desde el -f: el jar terminaba
+                         fuera del repo. Se deja el destino estandar de Maven. -->
+                    <outputDirectory>${project.build.directory}</outputDirectory>
                 </configuration>
             </plugin>
             <plugin>
