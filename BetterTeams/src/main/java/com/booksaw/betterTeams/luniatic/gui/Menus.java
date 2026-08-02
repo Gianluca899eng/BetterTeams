@@ -4,6 +4,9 @@ import com.booksaw.betterTeams.Main;
 import com.booksaw.betterTeams.PlayerRank;
 import com.booksaw.betterTeams.Team;
 import com.booksaw.betterTeams.TeamPlayer;
+import com.booksaw.betterTeams.luniatic.duelo.Desafio;
+import com.booksaw.betterTeams.luniatic.duelo.Duelo;
+import com.booksaw.betterTeams.luniatic.duelo.DueloManager;
 import com.booksaw.betterTeams.text.Formatter;
 import com.booksaw.betterTeams.text.LegacyTextUtils;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -19,6 +22,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * Menu de clanes.
@@ -53,6 +57,17 @@ public final class Menus {
 			37, 38, 39, 40, 41, 42, 43
 	};
 
+	// Rejilla de las pantallas fijas. Los botones caen siempre en las mismas
+	// columnas: una fila con 6 items y otra con 5 corridos se ve desprolijo.
+	/** Centro de la primera fila, para el titulo de la pantalla. */
+	private static final int CABECERA = 13;
+	/** Fila de arriba, sus siete columnas. */
+	private static final int[] FILA_A = {19, 20, 21, 22, 23, 24, 25};
+	/** Fila de abajo, sus siete columnas. Se usan las impares para centrar. */
+	private static final int[] FILA_B = {28, 29, 30, 31, 32, 33, 34};
+	/** Centro de la ultima fila, para la accion que cierra la pantalla. */
+	private static final int PIE = 40;
+
 	// Paleta de Luniatic.
 	private static final String MARCA = "&#9235FF";
 	private static final String CUERPO = "&#E4D9FF";
@@ -80,99 +95,104 @@ public final class Menus {
 		Inventory inv = crear(holder, "Clanes", clan == null ? "sin clan" : limpiar(clan.getName()));
 
 		if (clan == null) {
-			inv.setItem(20, boton(Material.COMPASS, "Explorar clanes",
-					"Mira todos los clanes del servidor", "y sumate a los que esten abiertos."));
-			holder.asignar(20, j -> abrirLista(j, 0, null));
+			inv.setItem(CABECERA, boton(Material.PAPER, "Todavia no tenes clan",
+					CUERPO + "Un clan te da chat propio, cofre compartido,",
+					CUERPO + "casa del clan y banco en comun.",
+					"",
+					CUERPO + "A los abiertos entras con un clic;",
+					CUERPO + "a los cerrados hay que ser invitado."));
 
-			inv.setItem(22, boton(Material.WRITABLE_BOOK, "Crear tu clan",
-					"Escribi " + ETIQUETA + "/team create <nombre>",
-					"", CUERPO + "El nombre no se puede repetir."));
-			holder.asignar(22, j -> {
+			inv.setItem(FILA_A[1], boton(Material.COMPASS, "Explorar clanes",
+					"Mira todos los clanes del servidor", "y sumate a los que esten abiertos."));
+			holder.asignar(FILA_A[1], j -> abrirLista(j, 0, null));
+
+			inv.setItem(FILA_A[3], boton(Material.WRITABLE_BOOK, "Crear tu clan",
+					CUERPO + "Es lo unico que hay que escribir,",
+					CUERPO + "porque el nombre lo elegis vos:",
+					"", ETIQUETA + "/team create <nombre>"));
+			holder.asignar(FILA_A[3], j -> {
 				j.closeInventory();
 				mensaje(j, "Para crear tu clan escribi " + ETIQUETA + "/team create <nombre>");
 			});
 
-			inv.setItem(24, boton(Material.NETHER_STAR, "Ranking",
+			inv.setItem(FILA_A[5], boton(Material.NETHER_STAR, "Ranking",
 					"Los clanes con mas puntaje."));
-			holder.asignar(24, j -> abrirRanking(j));
-
-			inv.setItem(31, boton(Material.PAPER, "Como funciona",
-					"Un clan te da chat propio, cofre compartido,",
-					"casa del clan y banco en comun.",
-					"",
-					CUERPO + "Entra a Explorar y unite a los que estan",
-					CUERPO + "abiertos con un clic. A los cerrados hay",
-					CUERPO + "que ser invitado."));
+			holder.asignar(FILA_A[5], j -> abrirRanking(j));
 		} else {
 			TeamPlayer yo = clan.getTeamPlayer(jugador);
 			boolean mando = yo != null && yo.getRank() != PlayerRank.DEFAULT;
 
-			inv.setItem(19, boton(Material.BOOK, "Mi clan", datosClan(clan)));
-			holder.asignar(19, j -> abrirFicha(j, clan.getName(), () -> abrirPortada(j)));
+			inv.setItem(CABECERA, boton(Material.BOOK, limpiar(clan.getName()), datosClan(clan)));
+			holder.asignar(CABECERA, j -> abrirFicha(j, clan.getName(), () -> abrirPortada(j)));
 
-			inv.setItem(20, boton(Material.PLAYER_HEAD, "Miembros",
+			// Fila de arriba: las siete cosas del dia a dia, una por columna.
+			inv.setItem(FILA_A[0], boton(Material.PLAYER_HEAD, "Miembros",
 					CUERPO + "Conectados: " + MARCA + clan.getMembers().getOnlinePlayers().size()
 							+ CUERPO + " de " + MARCA + clan.getMembers().size(),
 					"", ETIQUETA + "Clic para ver la lista"));
-			holder.asignar(20, j -> abrirMiembros(j, 0));
+			holder.asignar(FILA_A[0], j -> abrirMiembros(j, 0));
 
-			inv.setItem(21, boton(Material.ENDER_CHEST, "Cofre del clan",
+			inv.setItem(FILA_A[1], boton(Material.ENDER_CHEST, "Cofre del clan",
 					"El cofre compartido de todo el clan."));
-			holder.asignar(21, j -> comando(j, "team echest"));
+			holder.asignar(FILA_A[1], j -> comando(j, "team echest"));
 
-			inv.setItem(22, boton(Material.GOLD_INGOT, "Banco del clan",
+			inv.setItem(FILA_A[2], boton(Material.GOLD_INGOT, "Banco del clan",
 					CUERPO + "Saldo: " + MARCA + "$" + clan.getBalance(),
 					"", ETIQUETA + "Clic para poner o sacar plata"));
-			holder.asignar(22, Menus::abrirBanco);
+			holder.asignar(FILA_A[2], Menus::abrirBanco);
 
-			inv.setItem(23, boton(Material.RED_BED, "Casa del clan",
+			inv.setItem(FILA_A[3], boton(Material.RED_BED, "Casa del clan",
 					"Te lleva a la casa del clan.",
 					"",
 					mando ? CUERPO + "Para moverla, entra en Ajustes."
 							: CUERPO + "Solo el mando puede moverla."));
-			holder.asignar(23, j -> comando(j, "team home"));
+			holder.asignar(FILA_A[3], j -> comando(j, "team home"));
 
-			inv.setItem(24, boton(Material.OAK_SIGN, "Warps del clan",
+			inv.setItem(FILA_A[4], boton(Material.OAK_SIGN, "Warps del clan",
 					"Los puntos guardados del clan.",
 					"", ETIQUETA + "Clic para viajar a uno"));
-			holder.asignar(24, Menus::abrirWarps);
+			holder.asignar(FILA_A[4], Menus::abrirWarps);
 
-			inv.setItem(29, boton(Material.SHIELD, "Aliados",
+			inv.setItem(FILA_A[5], boton(Material.SHIELD, "Aliados",
 					"Los clanes con los que no te pegas."));
-			holder.asignar(29, j -> abrirAliados(j));
+			holder.asignar(FILA_A[5], j -> abrirAliados(j));
 
-			inv.setItem(30, boton(Material.COMPASS, "Explorar clanes",
+			inv.setItem(FILA_A[6], itemDuelos(clan));
+			holder.asignar(FILA_A[6], Menus::abrirDuelos);
+
+			// Fila de abajo: lo que mira hacia afuera del clan, centrado.
+			inv.setItem(FILA_B[1], boton(Material.COMPASS, "Explorar clanes",
 					"Mira todos los clanes del servidor."));
-			holder.asignar(30, j -> abrirLista(j, 0, null));
+			holder.asignar(FILA_B[1], j -> abrirLista(j, 0, null));
 
-			inv.setItem(31, boton(Material.NETHER_STAR, "Ranking",
+			inv.setItem(FILA_B[3], boton(Material.NETHER_STAR, "Ranking",
 					"Los clanes con mas puntaje."));
-			holder.asignar(31, j -> abrirRanking(j));
+			holder.asignar(FILA_B[3], j -> abrirRanking(j));
 
-			inv.setItem(32, boton(Material.COMPARATOR, "Ajustes del clan",
+			inv.setItem(FILA_B[5], boton(Material.COMPARATOR, "Ajustes del clan",
 					mando ? "Abrir o cerrar el clan, chat, color y mas."
 							: ERROR + "Solo el mando puede tocar esto."));
-			holder.asignar(32, j -> abrirAjustes(j));
+			holder.asignar(FILA_B[5], j -> abrirAjustes(j));
 
 			// Si es el unico duenio no puede irse: el plugin se lo va a negar. En ese
 			// caso lo que corresponde ofrecer es disolver, no salir.
 			boolean unicoDuenio = yo != null && yo.getRank() == PlayerRank.OWNER
 					&& clan.getRank(PlayerRank.OWNER).size() == 1;
 			if (unicoDuenio) {
-				inv.setItem(33, boton(Material.TNT, ERROR + "Disolver el clan",
+				inv.setItem(PIE, boton(Material.TNT, ERROR + "Disolver el clan",
 						CUERPO + "Sos el unico duenio, asi que no podes irte:",
 						CUERPO + "o le pasas el mando a alguien, o lo disolves.",
 						"", ERROR + "Se pierden el cofre y el banco."));
-				holder.asignar(33, j -> abrirConfirmacion(j, "Disolver el clan",
+				holder.asignar(PIE, j -> abrirConfirmacion(j, "Disolver el clan",
 						new String[]{
 								CUERPO + "Se borra " + MARCA + limpiar(clan.getName()) + CUERPO + " para todos.",
 								ERROR + "Se pierden los items del cofre y la plata del banco."
 						}, "team disband confirm", () -> abrirPortada(j)));
 			} else {
-				inv.setItem(33, boton(Material.IRON_DOOR, ERROR + "Salir del clan",
+				inv.setItem(PIE, boton(Material.IRON_DOOR, ERROR + "Salir del clan",
 						CUERPO + "Te vas de " + MARCA + limpiar(clan.getName()) + CUERPO + ".",
 						"", ETIQUETA + "Clic para salir"));
-				holder.asignar(33, j -> abrirConfirmacion(j, "Salir del clan",
+				holder.asignar(PIE, j -> abrirConfirmacion(j, "Salir del clan",
 						new String[]{
 								CUERPO + "Te vas de " + MARCA + limpiar(clan.getName()) + CUERPO + ".",
 								CUERPO + "Perdes el acceso al cofre y al banco del clan."
@@ -181,6 +201,232 @@ public final class Menus {
 		}
 
 		cerrar(inv, holder);
+		jugador.openInventory(inv);
+	}
+
+	// ------------------------------------------------------------------ duelos
+
+	private static ItemStack itemDuelos(Team clan) {
+		DueloManager manager = Main.plugin.getDueloManager();
+		if (manager == null || !manager.isHabilitado()) {
+			return boton(Material.GRAY_DYE, CUERPO + "Duelos",
+					CUERPO + "Estan desactivados en este servidor.");
+		}
+		Duelo duelo = manager.getDuelo(clan);
+		if (duelo != null) {
+			Team rival = Team.getTeam(duelo.rivalDe(clan.getID()));
+			return boton(Material.NETHERITE_SWORD, ERROR + "Duelo en curso",
+					CUERPO + "Contra " + MARCA + (rival == null ? "?" : limpiar(rival.getName())),
+					CUERPO + "Caidas: vos " + MARCA + duelo.getBajas(clan.getID())
+							+ CUERPO + ", ellos " + MARCA
+							+ (rival == null ? "?" : duelo.getBajas(rival.getID())),
+					"", ETIQUETA + "Clic para ver el duelo");
+		}
+		Desafio desafio = manager.getDesafioRecibido(clan);
+		if (desafio != null) {
+			Team retador = Team.getTeam(desafio.getRetador());
+			return boton(Material.BELL, MARCA + "Te desafiaron",
+					CUERPO + (retador == null ? "?" : limpiar(retador.getName()))
+							+ CUERPO + " quiere duelo por " + MARCA + "$" + fmt(desafio.getApuesta()),
+					"", ETIQUETA + "Clic para responder");
+		}
+		return boton(Material.IRON_SWORD, "Duelos",
+				CUERPO + "Un duelo pactado contra otro clan,",
+				CUERPO + "con una apuesta que ponen los dos.",
+				"", ETIQUETA + "Clic para entrar");
+	}
+
+	public static void abrirDuelos(Player jugador) {
+		Team clan = Team.getTeam(jugador);
+		if (clan == null) {
+			abrirPortada(jugador);
+			return;
+		}
+		DueloManager manager = Main.plugin.getDueloManager();
+		MenuHolder holder = new MenuHolder();
+		Inventory inv = crear(holder, "Duelos", limpiar(clan.getName()));
+
+		if (manager == null || !manager.isHabilitado()) {
+			inv.setItem(CABECERA, boton(Material.GRAY_DYE, CUERPO + "Duelos desactivados",
+					CUERPO + "El servidor los tiene apagados."));
+			volverA(inv, holder, Menus::abrirPortada);
+			jugador.openInventory(inv);
+			return;
+		}
+
+		Duelo duelo = manager.getDuelo(clan);
+		Desafio desafio = manager.getDesafioRecibido(clan);
+		boolean mando = tieneMando(clan, jugador);
+
+		if (duelo != null) {
+			Team rival = Team.getTeam(duelo.rivalDe(clan.getID()));
+			String nombreRival = rival == null ? "?" : limpiar(rival.getName());
+			inv.setItem(CABECERA, boton(Material.NETHERITE_SWORD, ERROR + "Duelo contra " + nombreRival,
+					CUERPO + "Pozo: " + MARCA + "$" + fmt(duelo.getPozo()),
+					CUERPO + "Objetivo: " + MARCA + manager.getObjetivoBajas() + CUERPO + " caidas",
+					"",
+					CUERPO + "Ustedes cayeron " + MARCA + duelo.getBajas(clan.getID()) + CUERPO + " veces",
+					CUERPO + "Ellos cayeron " + MARCA
+							+ (rival == null ? "?" : duelo.getBajas(rival.getID())) + CUERPO + " veces",
+					"",
+					CUERPO + "Quedan " + MARCA
+							+ duelo.segundosRestantes(System.currentTimeMillis()) / 60
+							+ CUERPO + " minutos. Al vencer gana el que menos cayo."));
+
+			inv.setItem(FILA_B[1], boton(Material.CLOCK, "Actualizar",
+					CUERPO + "Vuelve a leer el marcador."));
+			holder.asignar(FILA_B[1], Menus::abrirDuelos);
+
+			if (mando) {
+				inv.setItem(FILA_B[5], boton(Material.WHITE_BANNER, ERROR + "Rendirse",
+						CUERPO + "Cortas el duelo y el pozo entero",
+						CUERPO + "se lo lleva " + MARCA + nombreRival + CUERPO + ".",
+						"", CUERPO + "Sirve cuando ya esta perdido y",
+						CUERPO + "no vale la pena esperar al reloj."));
+				holder.asignar(FILA_B[5], j -> abrirConfirmacion(j, "Rendirse",
+						new String[]{
+								CUERPO + "El pozo de " + MARCA + "$" + fmt(duelo.getPozo())
+										+ CUERPO + " se lo lleva " + MARCA + nombreRival + CUERPO + "."
+						}, "team duelo rendirse", () -> abrirDuelos(j)));
+			}
+		} else if (desafio != null) {
+			Team retador = Team.getTeam(desafio.getRetador());
+			String nombreRetador = retador == null ? "?" : retador.getName();
+			inv.setItem(CABECERA, boton(Material.BELL, MARCA + "Te desafiaron",
+					CUERPO + limpiar(nombreRetador) + CUERPO + " quiere un duelo.",
+					CUERPO + "Apuesta: " + MARCA + "$" + fmt(desafio.getApuesta())
+							+ CUERPO + " cada uno.",
+					"",
+					CUERPO + "Si aceptas, los dos ponen esa plata",
+					CUERPO + "y se la lleva el que gane."));
+
+			if (mando) {
+				inv.setItem(FILA_B[1], boton(Material.LIME_DYE, "Aceptar el duelo",
+						CUERPO + "Empieza ahora mismo."));
+				holder.asignar(FILA_B[1], j -> abrirConfirmacion(j, "Aceptar el duelo",
+						new String[]{
+								CUERPO + "Se te van " + MARCA + "$" + fmt(desafio.getApuesta())
+										+ CUERPO + " del banco del clan.",
+								CUERPO + "Los recuperas doblados si ganan."
+						}, "team duelo " + nombreRetador + " " + fmt(desafio.getApuesta()),
+						() -> abrirDuelos(j)));
+
+				inv.setItem(FILA_B[5], boton(Material.RED_DYE, "Dejarlo pasar",
+						CUERPO + "El desafio vence solo."));
+				holder.asignar(FILA_B[5], Menus::abrirPortada);
+			}
+		} else {
+			inv.setItem(CABECERA, boton(Material.IRON_SWORD, "Duelos pactados",
+					CUERPO + "Los dos clanes tienen que estar de acuerdo:",
+					CUERPO + "uno desafia con un monto y el otro lo acepta.",
+					"",
+					CUERPO + "Pierde el que llegue a " + MARCA + manager.getObjetivoBajas()
+							+ CUERPO + " caidas.",
+					CUERPO + "Si se cumple el tiempo, gana el que menos cayo.",
+					"",
+					CUERPO + "No se toca nada de los claims: es pelea",
+					CUERPO + "entre personas, no permiso para romper."));
+
+			if (mando) {
+				inv.setItem(FILA_B[3], boton(Material.IRON_SWORD, "Desafiar a un clan",
+						CUERPO + "Elegi contra quien y cuanto."));
+				holder.asignar(FILA_B[3], j -> abrirElegirRival(j, 0));
+			} else {
+				inv.setItem(FILA_B[3], boton(Material.BARRIER, CUERPO + "Solo el mando pacta duelos"));
+			}
+		}
+
+		volverA(inv, holder, Menus::abrirPortada);
+		jugador.openInventory(inv);
+	}
+
+	/** Elegir contra quien, sin escribir el nombre. */
+	public static void abrirElegirRival(Player jugador, int pagina) {
+		Team propio = Team.getTeam(jugador);
+		DueloManager manager = Main.plugin.getDueloManager();
+		if (propio == null || manager == null || !manager.isHabilitado()) {
+			abrirPortada(jugador);
+			return;
+		}
+		Main.plugin.getFoliaLib().getScheduler().runAsync(t -> {
+			List<Team> candidatos = new ArrayList<>();
+			for (Team otro : buscar(null)) {
+				if (!otro.getID().equals(propio.getID()) && manager.estaLibre(otro)) {
+					candidatos.add(otro);
+				}
+			}
+			Main.plugin.getFoliaLib().getScheduler().runAtEntity(jugador, t2 -> {
+				int porPagina = CONTENIDO.length;
+				int paginas = Math.max(1, (int) Math.ceil(candidatos.size() / (double) porPagina));
+				int actual = Math.max(0, Math.min(pagina, paginas - 1));
+
+				MenuHolder holder = new MenuHolder();
+				Inventory inv = crear(holder, "Desafiar", (actual + 1) + "/" + paginas);
+				vaciarContenido(inv);
+
+				int desde = actual * porPagina;
+				for (int i = desde; i < candidatos.size() && i - desde < porPagina; i++) {
+					Team rival = candidatos.get(i);
+					inv.setItem(CONTENIDO[i - desde], boton(Material.IRON_SWORD,
+							limpiar(rival.getName()), datosClan(rival)));
+					String nombre = rival.getName();
+					holder.asignar(CONTENIDO[i - desde], j -> abrirElegirApuesta(j, nombre));
+				}
+				if (candidatos.isEmpty()) {
+					inv.setItem(CONTENIDO[10], boton(Material.COBWEB, "No hay a quien desafiar",
+							CUERPO + "No hay otro clan libre en este momento."));
+				}
+
+				if (actual > 0) {
+					inv.setItem(SLOT_ANTERIOR, boton(Material.SPECTRAL_ARROW, "Anterior"));
+					holder.asignar(SLOT_ANTERIOR, j -> abrirElegirRival(j, actual - 1));
+				}
+				if (actual < paginas - 1) {
+					inv.setItem(SLOT_SIGUIENTE, boton(Material.SPECTRAL_ARROW, "Siguiente"));
+					holder.asignar(SLOT_SIGUIENTE, j -> abrirElegirRival(j, actual + 1));
+				}
+				volverA(inv, holder, Menus::abrirDuelos);
+				jugador.openInventory(inv);
+			});
+		});
+	}
+
+	/** Elegir cuanto, sin escribir el monto. */
+	public static void abrirElegirApuesta(Player jugador, String nombreRival) {
+		Team clan = Team.getTeam(jugador);
+		if (clan == null) {
+			abrirPortada(jugador);
+			return;
+		}
+		MenuHolder holder = new MenuHolder();
+		Inventory inv = crear(holder, "Apuesta", "contra " + limpiar(nombreRival));
+
+		inv.setItem(CABECERA, boton(Material.PAPER, "Cuanto se juega",
+				CUERPO + "Cada clan pone lo mismo y el ganador",
+				CUERPO + "se lleva las dos partes.",
+				"",
+				CUERPO + "Tu banco tiene " + MARCA + "$" + clan.getBalance() + CUERPO + ".",
+				"",
+				CUERPO + "El otro clan tiene que aceptar el mismo",
+				CUERPO + "monto para que arranque."));
+
+		int[] opciones = {0, 100, 1000, 10000};
+		Material[] iconos = {Material.PAPER, Material.GOLD_NUGGET, Material.GOLD_INGOT, Material.GOLD_BLOCK};
+		int[] slots = {FILA_B[0], FILA_B[2], FILA_B[4], FILA_B[6]};
+		for (int i = 0; i < opciones.length; i++) {
+			int monto = opciones[i];
+			inv.setItem(slots[i], boton(iconos[i], monto == 0 ? "Sin apuesta" : "$" + monto,
+					monto == 0 ? CUERPO + "Solo por el orgullo." : CUERPO + "Cada clan pone $" + monto));
+			holder.asignar(slots[i], j -> abrirConfirmacion(j, "Desafiar",
+					new String[]{
+							CUERPO + "Le mandas el desafio a " + MARCA + limpiar(nombreRival) + CUERPO + ".",
+							CUERPO + "Apuesta: " + MARCA + "$" + monto + CUERPO + " cada uno.",
+							"",
+							CUERPO + "No pasa nada hasta que ellos acepten."
+					}, "team duelo " + nombreRival + " " + monto, () -> abrirElegirApuesta(j, nombreRival)));
+		}
+
+		volverA(inv, holder, j -> abrirElegirRival(j, 0));
 		jugador.openInventory(inv);
 	}
 
@@ -804,6 +1050,20 @@ public final class Menus {
 		for (int slot : CONTENIDO) {
 			inv.setItem(slot, null);
 		}
+	}
+
+	/** Pone el boton de volver, su destino, y el de cerrar. */
+	private static void volverA(Inventory inv, MenuHolder holder, Consumer<Player> destino) {
+		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver"));
+		holder.asignar(SLOT_VOLVER, destino);
+		cerrar(inv, holder);
+	}
+
+	/** Sin decimales cuando el monto es redondo, que es el caso normal. */
+	private static String fmt(double monto) {
+		return monto == Math.floor(monto) && !Double.isInfinite(monto)
+				? String.valueOf((long) monto)
+				: String.format("%.2f", monto);
 	}
 
 	private static void cerrar(Inventory inv, MenuHolder holder) {

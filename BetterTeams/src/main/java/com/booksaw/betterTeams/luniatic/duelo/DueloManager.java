@@ -81,6 +81,24 @@ public class DueloManager {
 		return clan == null ? null : enCurso.get(clan.getID());
 	}
 
+	/** El desafio que le mandaron a este clan y todavia no acepto, o null. */
+	public Desafio getDesafioRecibido(Team clan) {
+		if (clan == null) {
+			return null;
+		}
+		Desafio desafio = desafios.get(clan.getID());
+		if (desafio != null && desafio.vencio(System.currentTimeMillis())) {
+			desafios.remove(clan.getID());
+			return null;
+		}
+		return desafio;
+	}
+
+	/** Si el clan esta libre para pactar un duelo. */
+	public boolean estaLibre(Team clan) {
+		return clan != null && !enCurso.containsKey(clan.getID());
+	}
+
 	/** True solo si los dos clanes estan en el mismo duelo en curso. */
 	public boolean sonRivales(Team uno, Team otro) {
 		if (uno == null || otro == null || uno.getID().equals(otro.getID())) {
