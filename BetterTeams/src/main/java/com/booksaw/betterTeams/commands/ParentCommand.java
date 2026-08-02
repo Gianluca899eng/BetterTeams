@@ -84,6 +84,13 @@ public class ParentCommand extends SubCommand {
 		subCommands.put(getReference(command), command);
 	}
 
+	/** Que corre cuando un jugador escribe el comando pelado, sin argumentos. */
+	private String subcomandoPorDefecto;
+
+	public void setSubcomandoPorDefecto(String subcomandoPorDefecto) {
+		this.subcomandoPorDefecto = subcomandoPorDefecto;
+	}
+
 	@Override
 	public CommandResponse onCommand(CommandSender sender, String label, String[] args) {
 		return onCommand(sender, label, args, false);
@@ -93,6 +100,12 @@ public class ParentCommand extends SubCommand {
 
 		// checking length
 		if (args.length == 0) {
+			// Si hay un subcomando por defecto y lo escribio un jugador, se ejecuta
+			// ese en vez de la ayuda: /team abre el menu, que es lo que la gente
+			// espera. Por consola sigue mostrando la ayuda, que ahi si sirve.
+			if (subcomandoPorDefecto != null && sender instanceof org.bukkit.entity.Player) {
+				return onCommand(sender, label, new String[]{subcomandoPorDefecto}, first);
+			}
 			// help command is not expected to return anything
 			displayHelp(sender, label, args);
 			return null;

@@ -52,6 +52,13 @@ public class DueloManager {
 	private final boolean pisaClaims;
 	private DueloBossBar barra;
 	private GuardiaRegion guardia;
+	private PuenteEstadoPvp puentePvp;
+	/** A quienes les prendimos el PvP nosotros, para devolverselo al terminar. */
+	private final Set<UUID> prendidosPorNosotros = new java.util.HashSet<>();
+
+	public void setPuentePvp(PuenteEstadoPvp puentePvp) {
+		this.puentePvp = puentePvp;
+	}
 
 	/**
 	 * Desafios sin aceptar: clan retado -> (clan retador -> desafio).
@@ -207,7 +214,7 @@ public class DueloManager {
 	 * apagan cuando quieran, que para entonces ya esta permitido.
 	 */
 	private void prenderPvp(Duelo duelo) {
-		if (!pisaPvpIndividual) {
+		if (!pisaPvpIndividual || puentePvp == null) {
 			return;
 		}
 		for (UUID id : duelo.todosLosClanes()) {
@@ -216,7 +223,36 @@ public class DueloManager {
 				continue;
 			}
 			for (Player jugador : clan.getMembers().getOnlinePlayers()) {
-				Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "pvp " + jugador.getName() + " on");
+				// Se anota a quien se lo prendimos NOSOTROS, para devolverselo al
+				// final. Al que ya lo tenia prendido no se lo tocamos ni al terminar.
+				if (!puentePvp.tienePvp(jugador)) {
+					prendidosPorNosotros.add(jugador.getUniqueId());
+					puentePvp.prender(jugador);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Devuelve el PvP como estaba a quien se lo prendimos nosotros.
+	 *
+	 * <p>El duelo prende el PvP a la fuerza; dejarlo prendido al final seria
+	 * cambiarle al jugador una preferencia que el no toco. Solo se apaga a los que
+	 * lo tenian apagado antes de empezar: al que ya peleaba no se le toca nada.
+	 */
+	private void devolverPvp(Duelo duelo) {
+		if (puentePvp == null) {
+			return;
+		}
+		for (UUID id : duelo.todosLosClanes()) {
+			Team clan = Team.getTeam(id);
+			if (clan == null) {
+				continue;
+			}
+			for (Player jugador : clan.getMembers().getOnlinePlayers()) {
+				if (prendidosPorNosotros.remove(jugador.getUniqueId())) {
+					puentePvp.apagar(jugador);
+				}
 			}
 		}
 	}
@@ -603,8 +639,12 @@ public class DueloManager {
 		return lista;
 	}
 
-	/** Punto unico de cierre, asi ninguna salida se olvida de sacar la barra. */
+	/**
+	 * Punto unico de cierre, asi ninguna salida —rendicion, objetivo, tiempo,
+	 * apagado del servidor— se olvida de sacar la barra ni de devolver el PvP.
+	 */
 	private void cerrar(Duelo duelo) {
+		devolverPvp(duelo);
 		for (UUID id : duelo.todosLosClanes()) {
 			enCurso.remove(id);
 			borrarBarra(Team.getTeam(id));

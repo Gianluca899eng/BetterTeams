@@ -31,6 +31,7 @@ import com.booksaw.betterTeams.luniatic.duelo.DueloBossBar;
 import com.booksaw.betterTeams.luniatic.duelo.DueloDeathListener;
 import com.booksaw.betterTeams.luniatic.duelo.DueloPlaceholders;
 import com.booksaw.betterTeams.luniatic.duelo.DueloToggleListener;
+import com.booksaw.betterTeams.luniatic.duelo.PuenteEstadoPvp;
 import com.booksaw.betterTeams.luniatic.duelo.DueloManager;
 import com.booksaw.betterTeams.luniatic.gui.MenuCommand;
 import com.booksaw.betterTeams.luniatic.gui.MenuListener;
@@ -397,6 +398,8 @@ public class Main extends JavaPlugin {
 		}
 
 		teamCommand.addSubCommand(new MenuCommand());
+		// /team pelado abre el menu en vez de escupir la ayuda.
+		teamCommand.setSubcomandoPorDefecto("menu");
 		// only used if a team is only allowed a single owner
 		if (getConfig().getBoolean("singleOwner")) {
 			teamCommand.addSubCommand(new SetOwnerCommand());
@@ -488,6 +491,7 @@ public class Main extends JavaPlugin {
 			foliaLib.getScheduler().runTimer(task -> dueloManager.revisar(), 200L, 200L);
 			getServer().getPluginManager().registerEvents(new DueloDeathListener(dueloManager), this);
 			if (dueloManager.isPisaPvpIndividual()) {
+				dueloManager.setPuentePvp(new PuenteEstadoPvp());
 				getServer().getPluginManager().registerEvents(new DueloDamageListener(dueloManager), this);
 				// Cortar el toggle ataca el problema un paso antes que destapar el
 				// dano: sin esto, /pvp vuelve decorativo al duelo.
