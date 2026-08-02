@@ -21,7 +21,12 @@ public class MenuCommand extends SubCommand {
 		if (!(sender instanceof Player)) {
 			return new CommandResponse("menu.solo_jugadores");
 		}
-		MenuClanes.abrirLista((Player) sender, 0, args.length > 0 ? args[0] : null);
+		if (args.length > 0) {
+			// Con texto se entra directo al buscador, ya filtrado.
+			Menus.abrirLista((Player) sender, 0, args[0]);
+		} else {
+			Menus.abrirPortada((Player) sender);
+		}
 		return new CommandResponse(true);
 	}
 
