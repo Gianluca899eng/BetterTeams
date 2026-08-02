@@ -36,7 +36,9 @@ public class DueloDamageListener implements Listener {
 
 	public DueloDamageListener(DueloManager manager) {
 		this.manager = manager;
-		this.guardia = Bukkit.getPluginManager().getPlugin("WorldGuard") != null ? new GuardiaRegion() : null;
+		this.guardia = Bukkit.getPluginManager().getPlugin("WorldGuard") != null
+				? new GuardiaRegion(manager.isPisaClaims())
+				: null;
 		// El cartel del scoreboard usa la misma guarda: tiene que decir lo mismo que
 		// hace el listener, o avisa "forzado" donde no se puede pegar.
 		manager.setGuardia(guardia);

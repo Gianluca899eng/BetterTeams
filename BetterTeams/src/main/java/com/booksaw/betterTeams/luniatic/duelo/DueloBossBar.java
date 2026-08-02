@@ -65,8 +65,8 @@ public class DueloBossBar implements Listener {
 		Team rival = Team.getTeam(duelo.rivalDe(clan.getID()));
 		int propias = duelo.getBajas(clan.getID());
 		int ajenas = rival == null ? 0 : duelo.getBajas(rival.getID());
-		int objetivo = Math.max(1, manager.getObjetivoBajas());
 		long minutos = duelo.segundosRestantes(System.currentTimeMillis()) / 60;
+		long duracionMillis = manager.getDuracionMillis();
 		String nombreRival = rival == null ? "?" : Texto.limpiar(rival.getName());
 
 		// Corto a proposito: la barra se lee de reojo en medio de una pelea. El
@@ -86,7 +86,14 @@ public class DueloBossBar implements Listener {
 		String titulo = Texto.col(encabezado
 				+ SEPARADOR + MARCA + propias + CUERPO + "-" + MARCA + ajenas
 				+ SEPARADOR + MARCA + minutos + CUERPO + "m");
-		double progreso = Math.min(1.0, propias / (double) objetivo);
+
+		// La barra es el reloj: arranca llena y se vacia. Antes se llenaba con las
+		// caidas propias, y una barra que crece se lee como progreso hacia algo
+		// bueno justo cuando significa lo contrario. El marcador ya esta en el
+		// titulo; lo que la barra aporta es cuanto queda.
+		double progreso = duracionMillis <= 0 ? 1.0
+				: Math.max(0.0, Math.min(1.0,
+						(duelo.getFinMillis() - System.currentTimeMillis()) / (double) duracionMillis));
 
 		for (Player jugador : conectados) {
 			BossBar barra = barras.computeIfAbsent(jugador.getUniqueId(),

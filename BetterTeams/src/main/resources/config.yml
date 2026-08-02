@@ -716,6 +716,10 @@ duelo:
   # entera, en vez de pegarle un texto al estado propio y que quede "OFF - FORZADO".
   aviso-tab: ' &e- FORZADO'
 
+  # Si el duelo pisa el "pvp deny" que traen los claims de jugadores. Las regiones
+  # del staff —el spawn— NO se pisan nunca, valga lo que valga esto.
+  pisa-claims: true
+
   # Logs de por que el override no destapo un dano. Solo para diagnosticar.
   debug: false
 

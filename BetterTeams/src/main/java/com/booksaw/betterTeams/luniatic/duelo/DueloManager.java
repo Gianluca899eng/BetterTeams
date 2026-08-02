@@ -49,6 +49,7 @@ public class DueloManager {
 	private final String avisoTab;
 	private final boolean arrastraAliados;
 	private final boolean debug;
+	private final boolean pisaClaims;
 	private DueloBossBar barra;
 	private GuardiaRegion guardia;
 
@@ -76,6 +77,7 @@ public class DueloManager {
 			avisoTab = "";
 			arrastraAliados = false;
 			debug = false;
+			pisaClaims = false;
 			return;
 		}
 		habilitado = seccion.getBoolean("enabled", false);
@@ -90,6 +92,17 @@ public class DueloManager {
 		avisoTab = seccion.getString("aviso-tab", "&#FF4554PvP forzado por duelo");
 		arrastraAliados = seccion.getBoolean("arrastra-aliados", true);
 		debug = seccion.getBoolean("debug", false);
+		pisaClaims = seccion.getBoolean("pisa-claims", true);
+	}
+
+	/**
+	 * Si el duelo pisa el {@code pvp deny} de los claims de jugadores.
+	 *
+	 * <p>Las regiones del staff —el spawn— no se pisan nunca, valga lo que valga
+	 * esto.
+	 */
+	public boolean isPisaClaims() {
+		return pisaClaims;
 	}
 
 	/** Logs de por que el override no destapo un dano. Apagado salvo diagnostico. */
@@ -141,6 +154,10 @@ public class DueloManager {
 		return objetivoBajas;
 	}
 
+	public long getDuracionMillis() {
+		return duracionMillis;
+	}
+
 	public boolean isBarraActiva() {
 		return barraActiva;
 	}
@@ -170,6 +187,37 @@ public class DueloManager {
 	private void borrarBarra(Team clan) {
 		if (barra != null) {
 			barra.quitar(clan);
+		}
+	}
+
+	/**
+	 * Le prende el PvP a todos los que entran al duelo.
+	 *
+	 * <p>Sin esto, el que ya lo tenia apagado cuando empezo el duelo quedaba
+	 * atrapado: el bloqueo del toggle no lo deja apagarlo —ya estaba apagado— y el
+	 * scoreboard le mostraba OFF mientras el duelo corria. Ahora el duelo lo prende
+	 * y el bloqueo lo mantiene asi hasta que termine.
+	 *
+	 * <p>Se hace por el comando de PvPManager desde consola, no por su API: no hace
+	 * falta compilar contra ese plugin, y si mañana se cambia por otro alcanza con
+	 * cambiar esta linea. Es idempotente: prender lo que ya esta prendido no hace
+	 * nada.
+	 *
+	 * <p>⚠️ <b>No se restaura al terminar.</b> Quedan con el PvP prendido y lo
+	 * apagan cuando quieran, que para entonces ya esta permitido.
+	 */
+	private void prenderPvp(Duelo duelo) {
+		if (!pisaPvpIndividual) {
+			return;
+		}
+		for (UUID id : duelo.todosLosClanes()) {
+			Team clan = Team.getTeam(id);
+			if (clan == null) {
+				continue;
+			}
+			for (Player jugador : clan.getMembers().getOnlinePlayers()) {
+				Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "pvp " + jugador.getName() + " on");
+			}
 		}
 	}
 
@@ -356,6 +404,7 @@ public class DueloManager {
 		}
 
 		dibujarTodos(duelo);
+		prenderPvp(duelo);
 		return Resultado.ok("duelo.arranco_confirmacion", unClan.getName());
 	}
 
