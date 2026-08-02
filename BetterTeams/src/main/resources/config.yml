@@ -665,8 +665,15 @@ duelo:
   # Viene apagado. Sin esto no existen ni el comando ni la mecanica.
   enabled: false
 
-  # Cuanto dura un duelo. Al vencer sin rendicion es empate y cada clan
-  # recupera su parte.
+  # Cuantas caidas a manos del rival hacen falta para perder el duelo. Es lo que
+  # le da una salida al duelo: sin esto la unica forma de terminarlo era rendirse
+  # perdiendo el pozo o aguantar el reloj para recuperarlo, asi que esconderse
+  # siempre convenia y nadie se rendia nunca.
+  # Solo cuentan las caidas causadas por el clan rival, no ahogarse ni caerse.
+  objetivo-bajas: 10
+
+  # Cuanto dura un duelo. Si se cumple sin llegar al objetivo, gana el que menos
+  # caidas tenga; empate exacto, cada uno recupera lo suyo.
   duracion-minutos: 30
 
   # Cuanto vive un desafio sin aceptar.

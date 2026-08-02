@@ -37,7 +37,9 @@ public class DueloCommand extends TeamSubCommand {
 			return new CommandResponse(true, new ReferencedFormatMessage("duelo.estado",
 					rival == null ? "?" : rival.getName(),
 					String.format("%.2f", duelo.getPozo()),
-					String.valueOf(duelo.segundosRestantes(System.currentTimeMillis()) / 60)));
+					String.valueOf(duelo.segundosRestantes(System.currentTimeMillis()) / 60),
+					duelo.getBajas(team.getID()) + "/" + manager.getObjetivoBajas(),
+					rival == null ? "?" : duelo.getBajas(rival.getID()) + "/" + manager.getObjetivoBajas()));
 		}
 
 		if (args[0].equalsIgnoreCase("rendirse")) {

@@ -27,6 +27,7 @@ import com.booksaw.betterTeams.events.MCTeamManagement.BelowNameType;
 import com.booksaw.betterTeams.extension.ExtensionManager;
 import com.booksaw.betterTeams.luniatic.duelo.DueloCommand;
 import com.booksaw.betterTeams.luniatic.duelo.DueloDamageListener;
+import com.booksaw.betterTeams.luniatic.duelo.DueloDeathListener;
 import com.booksaw.betterTeams.luniatic.duelo.DueloManager;
 import com.booksaw.betterTeams.luniatic.gui.MenuCommand;
 import com.booksaw.betterTeams.luniatic.gui.MenuListener;
@@ -469,6 +470,7 @@ public class Main extends JavaPlugin {
 		if (dueloManager != null && dueloManager.isHabilitado()) {
 			// Una sola tarea cada 10 s para los vencimientos: nada por jugador ni por tick.
 			foliaLib.getScheduler().runTimer(task -> dueloManager.revisar(), 200L, 200L);
+			getServer().getPluginManager().registerEvents(new DueloDeathListener(dueloManager), this);
 			if (dueloManager.isPisaPvpIndividual()) {
 				getServer().getPluginManager().registerEvents(new DueloDamageListener(dueloManager), this);
 			}

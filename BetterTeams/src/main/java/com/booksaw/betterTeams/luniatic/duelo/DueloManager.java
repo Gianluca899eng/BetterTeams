@@ -36,6 +36,7 @@ public class DueloManager {
 	private final double apuestaMaxima;
 	private final boolean pisaPvpIndividual;
 	private final boolean avisoGlobal;
+	private final int objetivoBajas;
 
 	/** Desafios sin aceptar, indexados por el clan retado. */
 	private final Map<UUID, Desafio> desafios = new HashMap<>();
@@ -51,6 +52,7 @@ public class DueloManager {
 			apuestaMaxima = 0;
 			pisaPvpIndividual = false;
 			avisoGlobal = false;
+			objetivoBajas = 0;
 			return;
 		}
 		habilitado = seccion.getBoolean("enabled", false);
@@ -60,6 +62,11 @@ public class DueloManager {
 		apuestaMaxima = Math.max(apuestaMinima, seccion.getDouble("apuesta.maxima", 100000));
 		pisaPvpIndividual = seccion.getBoolean("pisa-pvp-individual", false);
 		avisoGlobal = seccion.getBoolean("aviso-global", false);
+		objetivoBajas = Math.max(1, seccion.getInt("objetivo-bajas", 10));
+	}
+
+	public int getObjetivoBajas() {
+		return objetivoBajas;
 	}
 
 	public boolean isHabilitado() {
@@ -186,6 +193,33 @@ public class DueloManager {
 		return Resultado.ok("duelo.rendido");
 	}
 
+	/**
+	 * Registra que un jugador de un clan cayo a manos del clan rival.
+	 *
+	 * <p>Es lo que le da sentido al duelo: sin esto la unica salida era rendirse
+	 * perdiendo el pozo o aguantar el reloj para recuperarlo, asi que esconderse
+	 * siempre convenia.
+	 */
+	public void registrarBaja(Team clanCaido, Team clanAtacante) {
+		if (!habilitado || !sonRivales(clanCaido, clanAtacante)) {
+			return;
+		}
+		Duelo duelo = enCurso.get(clanCaido.getID());
+		int bajas = duelo.sumarBaja(clanCaido.getID());
+
+		if (bajas >= objetivoBajas) {
+			cerrar(duelo);
+			pagar(clanAtacante, duelo.getPozo());
+			avisar(clanAtacante, "duelo.gano", clanCaido.getName(), fmt(duelo.getPozo()));
+			avisar(clanCaido, "duelo.perdio", clanAtacante.getName(), fmt(duelo.getApuesta()));
+			return;
+		}
+
+		String marcador = bajas + "/" + objetivoBajas;
+		avisar(clanCaido, "duelo.marcador_propio", marcador, clanAtacante.getName());
+		avisar(clanAtacante, "duelo.marcador_rival", clanCaido.getName(), marcador);
+	}
+
 	/** Revisa vencimientos. La llama una tarea repetitiva, no cada evento. */
 	public void revisar() {
 		long ahora = System.currentTimeMillis();
@@ -200,8 +234,36 @@ public class DueloManager {
 		}
 		for (Duelo duelo : terminados) {
 			cerrar(duelo);
-			// Tiempo cumplido sin rendicion: empate, cada uno recupera lo suyo.
+			resolverPorTiempo(duelo);
+		}
+	}
+
+	/**
+	 * Se cumplio el tiempo: gana el que tenga MENOS bajas. Empate exacto, cada uno
+	 * recupera lo suyo.
+	 */
+	private void resolverPorTiempo(Duelo duelo) {
+		UUID ganador = duelo.getGanandoAhora();
+		if (ganador == null) {
 			devolver(duelo, "duelo.empate");
+			return;
+		}
+		Team ganadorClan = Team.getTeam(ganador);
+		Team perdedorClan = Team.getTeam(duelo.rivalDe(ganador));
+		if (ganadorClan == null) {
+			devolver(duelo, "duelo.empate");
+			return;
+		}
+		pagar(ganadorClan, duelo.getPozo());
+		avisar(ganadorClan, "duelo.gano_por_tiempo",
+				String.valueOf(duelo.getBajas(ganador)),
+				String.valueOf(duelo.getBajas(duelo.rivalDe(ganador))),
+				fmt(duelo.getPozo()));
+		if (perdedorClan != null) {
+			avisar(perdedorClan, "duelo.perdio_por_tiempo",
+					String.valueOf(duelo.getBajas(duelo.rivalDe(ganador))),
+					String.valueOf(duelo.getBajas(ganador)),
+					fmt(duelo.getApuesta()));
 		}
 	}
 
