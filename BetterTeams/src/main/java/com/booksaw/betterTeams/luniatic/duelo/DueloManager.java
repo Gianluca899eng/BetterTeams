@@ -1,9 +1,13 @@
 package com.booksaw.betterTeams.luniatic.duelo;
 
 import com.booksaw.betterTeams.Main;
+import com.booksaw.betterTeams.PlayerRank;
 import com.booksaw.betterTeams.Team;
+import com.booksaw.betterTeams.TeamPlayer;
 import com.booksaw.betterTeams.message.MessageManager;
+import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -257,6 +261,9 @@ public class DueloManager {
 		susRecibidos.put(retador.getID(),
 				new Desafio(retador.getID(), apuesta, System.currentTimeMillis() + esperaMillis));
 		avisar(retado, "duelo.recibido", retador.getName(), fmt(apuesta));
+		// Y en pantalla al mando, que es el unico que puede responderlo: un mensaje
+		// de chat se pierde entre lo demas y el desafio se queda esperando.
+		avisarEnPantallaAlMando(retado, "duelo.recibido_titulo", retador.getName(), fmt(apuesta));
 		return Resultado.ok("duelo.enviado", retado.getName(), fmt(apuesta));
 	}
 
@@ -528,6 +535,29 @@ public class DueloManager {
 
 	private void avisar(Team clan, String referencia, Object... argumentos) {
 		MessageManager.sendMessage(clan.getMembers().getOnlinePlayers(), referencia, argumentos);
+	}
+
+	/**
+	 * Titulo en pantalla, solo para lider y colider.
+	 *
+	 * <p>Van solo ellos porque son los unicos que pueden responder el desafio.
+	 * Tirarselo en la cara a todo el clan seria ruido para gente que no puede hacer
+	 * nada al respecto.
+	 */
+	private void avisarEnPantallaAlMando(Team clan, String referencia, Object... argumentos) {
+		List<Player> mando = new ArrayList<>();
+		for (TeamPlayer miembro : clan.getMembers().getClone()) {
+			if (miembro.getRank() == PlayerRank.DEFAULT) {
+				continue;
+			}
+			Player jugador = Bukkit.getPlayer(miembro.getPlayerUUID());
+			if (jugador != null) {
+				mando.add(jugador);
+			}
+		}
+		if (!mando.isEmpty()) {
+			MessageManager.sendTitle(mando, referencia, argumentos);
+		}
 	}
 
 	/**
