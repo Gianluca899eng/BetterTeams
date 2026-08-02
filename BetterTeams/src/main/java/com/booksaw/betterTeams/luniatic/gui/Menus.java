@@ -100,7 +100,9 @@ public final class Menus {
 					"Un clan te da chat propio, cofre compartido,",
 					"casa del clan y banco en comun.",
 					"",
-					CUERPO + "Si te invitaron, entra con " + ETIQUETA + "/team join <clan>"));
+					CUERPO + "Entra a Explorar y unite a los que estan",
+					CUERPO + "abiertos con un clic. A los cerrados hay",
+					CUERPO + "que ser invitado."));
 		} else {
 			TeamPlayer yo = clan.getTeamPlayer(jugador);
 			boolean mando = yo != null && yo.getRank() != PlayerRank.DEFAULT;
@@ -126,7 +128,7 @@ public final class Menus {
 			inv.setItem(23, boton(Material.RED_BED, "Casa del clan",
 					"Te lleva a la casa del clan.",
 					"",
-					mando ? ETIQUETA + "/team sethome" + CUERPO + " la fija donde estas parado"
+					mando ? CUERPO + "Para moverla, entra en Ajustes."
 							: CUERPO + "Solo el mando puede moverla."));
 			holder.asignar(23, j -> comando(j, "team home"));
 
@@ -152,14 +154,30 @@ public final class Menus {
 							: ERROR + "Solo el mando puede tocar esto."));
 			holder.asignar(32, j -> abrirAjustes(j));
 
-			inv.setItem(33, boton(Material.BARRIER, ERROR + "Salir del clan",
-					CUERPO + "Te vas de " + MARCA + limpiar(clan.getName()) + CUERPO + ".",
-					"", ETIQUETA + "Clic para salir"));
-			holder.asignar(33, j -> abrirConfirmacion(j, "Salir del clan",
-					new String[]{
-							CUERPO + "Te vas de " + MARCA + limpiar(clan.getName()) + CUERPO + ".",
-							CUERPO + "Perdes el acceso al cofre y al banco del clan."
-					}, "team leave", () -> abrirPortada(j)));
+			// Si es el unico duenio no puede irse: el plugin se lo va a negar. En ese
+			// caso lo que corresponde ofrecer es disolver, no salir.
+			boolean unicoDuenio = yo != null && yo.getRank() == PlayerRank.OWNER
+					&& clan.getRank(PlayerRank.OWNER).size() == 1;
+			if (unicoDuenio) {
+				inv.setItem(33, boton(Material.TNT, ERROR + "Disolver el clan",
+						CUERPO + "Sos el unico duenio, asi que no podes irte:",
+						CUERPO + "o le pasas el mando a alguien, o lo disolves.",
+						"", ERROR + "Se pierden el cofre y el banco."));
+				holder.asignar(33, j -> abrirConfirmacion(j, "Disolver el clan",
+						new String[]{
+								CUERPO + "Se borra " + MARCA + limpiar(clan.getName()) + CUERPO + " para todos.",
+								ERROR + "Se pierden los items del cofre y la plata del banco."
+						}, "team disband confirm", () -> abrirPortada(j)));
+			} else {
+				inv.setItem(33, boton(Material.IRON_DOOR, ERROR + "Salir del clan",
+						CUERPO + "Te vas de " + MARCA + limpiar(clan.getName()) + CUERPO + ".",
+						"", ETIQUETA + "Clic para salir"));
+				holder.asignar(33, j -> abrirConfirmacion(j, "Salir del clan",
+						new String[]{
+								CUERPO + "Te vas de " + MARCA + limpiar(clan.getName()) + CUERPO + ".",
+								CUERPO + "Perdes el acceso al cofre y al banco del clan."
+						}, "team leave", () -> abrirPortada(j)));
+			}
 		}
 
 		cerrar(inv, holder);
@@ -293,8 +311,19 @@ public final class Menus {
 		if (propio != null && propio.getID().equals(clan.getID())) {
 			inv.setItem(24, boton(Material.LIME_DYE, "Este es tu clan"));
 		} else if (propio != null) {
-			inv.setItem(24, boton(Material.BARRIER, "Ya estas en un clan",
-					CUERPO + "Sali del tuyo antes de entrar a otro."));
+			// Con clan propio lo util no es unirse sino proponer alianza.
+			if (tieneMando(propio, jugador) && !propio.isAlly(clan)) {
+				inv.setItem(24, boton(Material.SHIELD, "Proponer alianza",
+						CUERPO + "Le manda la propuesta a " + MARCA + limpiar(clan.getName()) + CUERPO + ".",
+						CUERPO + "Se sella cuando ellos la piden de vuelta."));
+				holder.asignar(24, j -> ejecutarYVolver(j, "team ally " + clan.getName(),
+						() -> abrirFicha(j, nombreClan, volver)));
+			} else if (propio.isAlly(clan)) {
+				inv.setItem(24, boton(Material.SHIELD, "Ya son aliados"));
+			} else {
+				inv.setItem(24, boton(Material.BARRIER, "Ya estas en un clan",
+						CUERPO + "Solo el mando puede proponer alianzas."));
+			}
 		} else if (clan.isOpen()) {
 			inv.setItem(24, boton(Material.LIME_DYE, "Unirte a este clan",
 					ETIQUETA + "Clic para entrar"));
@@ -491,11 +520,13 @@ public final class Menus {
 		inv.setItem(33, boton(Material.TNT, ERROR + "Disolver el clan",
 				CUERPO + "Borra el clan para todos.",
 				CUERPO + "Se pierde el cofre y el banco."));
+		// "disband confirm" en un solo tiro: el comando pelado abre su propia
+		// confirmacion por chat, que despues de una pantalla de confirmacion sobra.
 		holder.asignar(33, j -> abrirConfirmacion(j, "Disolver el clan",
 				new String[]{
 						CUERPO + "Se borra " + MARCA + limpiar(clan.getName()) + CUERPO + " para todos.",
 						ERROR + "Se pierden los items del cofre y la plata del banco."
-				}, "team disband", () -> abrirAjustes(j)));
+				}, "team disband confirm", () -> abrirAjustes(j)));
 
 		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver"));
 		holder.asignar(SLOT_VOLVER, Menus::abrirPortada);
@@ -717,7 +748,12 @@ public final class Menus {
 	/**
 	 * Pantalla de confirmacion para lo que no tiene vuelta atras.
 	 *
-	 * <p>El "no" esta en el medio y el "si" corrido a un costado a proposito: lo
+	 * <p>Verde es SI y rojo es NO, que es como se lee en un menu de Minecraft. La
+	 * version anterior los tenia al reves —verde para cancelar, rojo para la accion
+	 * destructiva, que es la convencion de escritorio— y en el juego se leia
+	 * invertido.
+	 *
+	 * <p>El "no" igual queda en el medio y el "si" corrido a un costado: lo
 	 * destructivo no deberia caer donde uno clickea por inercia.
 	 */
 	public static void abrirConfirmacion(Player jugador, String titulo, String[] aviso,
@@ -730,12 +766,12 @@ public final class Menus {
 		lore.add(ERROR + "Esto no se puede deshacer.");
 		inv.setItem(13, boton(Material.PAPER, ERROR + titulo, lore.toArray(new String[0])));
 
-		inv.setItem(29, boton(Material.LIME_DYE, "No, volver",
+		inv.setItem(29, boton(Material.RED_DYE, ERROR + "No, volver",
 				CUERPO + "No pasa nada."));
 		holder.asignar(29, j -> volver.run());
 
-		inv.setItem(33, boton(Material.RED_DYE, ERROR + "Si, hacerlo",
-				CUERPO + "Se ejecuta ahora."));
+		inv.setItem(33, boton(Material.LIME_DYE, "Si, hacerlo",
+				CUERPO + "Se hace ahora, de una."));
 		holder.asignar(33, j -> comando(j, comando));
 
 		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver"));

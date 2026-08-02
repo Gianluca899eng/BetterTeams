@@ -7,6 +7,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.inventory.Inventory;
 
 import java.util.function.Consumer;
 
@@ -16,10 +17,20 @@ import java.util.function.Consumer;
  * <p>Cancela todo lo que pase adentro del menu antes de decidir que hacer, y
  * tambien el inventario del jugador mientras el menu esta abierto: si un menu
  * deja sacar su propio item, cualquier boton es un generador de items.
+ *
+ * <p>🔑 <b>El inventario clickeado se reconoce por su holder, nunca comparando
+ * inventarios.</b> {@code CraftInventory} no implementa {@code equals}, asi que
+ * {@code getInventory().equals(getClickedInventory())} devuelve falso aunque sean
+ * el mismo inventario: son dos envoltorios distintos. Con esa comparacion el menu
+ * cancelaba el clic pero no ejecutaba nunca la accion, y parecia roto sin tirar un
+ * solo error.
+ *
+ * <p>Tampoco lleva {@code ignoreCancelled}: el clic ya viene cancelado por este
+ * mismo listener, y si otro plugin lo cancelara antes, el menu dejaria de responder.
  */
 public class MenuListener implements Listener {
 
-	@EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+	@EventHandler(priority = EventPriority.NORMAL)
 	public void alClickear(InventoryClickEvent evento) {
 		if (!(evento.getInventory().getHolder() instanceof MenuHolder)) {
 			return;
@@ -29,11 +40,14 @@ public class MenuListener implements Listener {
 		if (!(evento.getWhoClicked() instanceof Player)) {
 			return;
 		}
-		if (!evento.getInventory().equals(evento.getClickedInventory())) {
+
+		Inventory clickeado = evento.getClickedInventory();
+		if (clickeado == null || !(clickeado.getHolder() instanceof MenuHolder)) {
+			// Clickeo su propio inventario con el menu abierto: ya quedo cancelado.
 			return;
 		}
 
-		MenuHolder holder = (MenuHolder) evento.getInventory().getHolder();
+		MenuHolder holder = (MenuHolder) clickeado.getHolder();
 		Consumer<Player> accion = holder.getAccion(evento.getSlot());
 		if (accion == null) {
 			return;
@@ -46,7 +60,7 @@ public class MenuListener implements Listener {
 				() -> accion.accept(jugador), 1L);
 	}
 
-	@EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+	@EventHandler(priority = EventPriority.NORMAL)
 	public void alArrastrar(InventoryDragEvent evento) {
 		if (evento.getInventory().getHolder() instanceof MenuHolder) {
 			evento.setCancelled(true);
