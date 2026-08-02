@@ -66,6 +66,12 @@ public final class Menus {
 	/** Centro de la ultima fila, para la accion que cierra la pantalla. */
 	private static final int PIE = 40;
 
+	// Regla fija para cualquier par de si/no, en cualquier pantalla: el NO a la
+	// izquierda y el SI a la derecha, siempre. Tenerlo al reves en una pantalla y
+	// no en otra hace que la gente confirme de memoria y se equivoque.
+	private static final int SLOT_NO = 29;
+	private static final int SLOT_SI = 33;
+
 	// Paleta de Luniatic.
 	private static final String MARCA = "&#9235FF";
 	private static final String CUERPO = "&#E4D9FF";
@@ -1062,8 +1068,8 @@ public final class Menus {
 	 * destructiva, que es la convencion de escritorio— y en el juego se leia
 	 * invertido.
 	 *
-	 * <p>El "no" igual queda en el medio y el "si" corrido a un costado: lo
-	 * destructivo no deberia caer donde uno clickea por inercia.
+	 * <p>Y la posicion es siempre la misma: NO a la izquierda, SI a la derecha. Ver
+	 * {@link #SLOT_NO} y {@link #SLOT_SI}.
 	 */
 	public static void abrirConfirmacion(Player jugador, String titulo, String[] aviso,
 			String comando, Runnable volver) {
@@ -1075,13 +1081,13 @@ public final class Menus {
 		lore.add(ERROR + "Esto no se puede deshacer.");
 		inv.setItem(13, boton(Material.PAPER, ERROR + titulo, lore.toArray(new String[0])));
 
-		inv.setItem(29, boton(Material.RED_DYE, ERROR + "No, volver",
+		inv.setItem(SLOT_NO, boton(Material.RED_DYE, ERROR + "No, volver",
 				CUERPO + "No pasa nada."));
-		holder.asignar(29, j -> volver.run());
+		holder.asignar(SLOT_NO, j -> volver.run());
 
-		inv.setItem(33, boton(Material.LIME_DYE, "Si, hacerlo",
+		inv.setItem(SLOT_SI, boton(Material.LIME_DYE, "Si, hacerlo",
 				CUERPO + "Se hace ahora, de una."));
-		holder.asignar(33, j -> comando(j, comando));
+		holder.asignar(SLOT_SI, j -> comando(j, comando));
 
 		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver"));
 		holder.asignar(SLOT_VOLVER, j -> volver.run());

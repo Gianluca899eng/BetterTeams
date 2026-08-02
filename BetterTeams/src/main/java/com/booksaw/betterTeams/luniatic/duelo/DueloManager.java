@@ -235,8 +235,15 @@ public class DueloManager {
 				// Los dos tienen que estar de acuerdo con lo que se juega.
 				return Resultado.error("duelo.monto_distinto", fmt(recibido.getApuesta()));
 			}
-			misRecibidos.remove(retado.getID());
-			return arrancar(retado, retador, apuesta);
+			// 🔑 El desafio se consume SOLO si el duelo arranco. Antes se borraba
+			// antes de intentar, asi que aceptar sin plata en el banco te dejaba sin
+			// invitacion y sin duelo: habia que pedirle al otro que la mandara de
+			// nuevo por un error que no cambiaba nada del acuerdo.
+			Resultado resultado = arrancar(retado, retador, apuesta);
+			if (resultado.exito) {
+				misRecibidos.remove(retado.getID());
+			}
+			return resultado;
 		}
 
 		Map<UUID, Desafio> susRecibidos = desafios.computeIfAbsent(retado.getID(), id -> new HashMap<>());
