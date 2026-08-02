@@ -651,7 +651,45 @@ extension:
   # Use 0 to enable immediately during startup (not recommended)
   enableTick: 1
 
-# Debug options: 
+##############################################################
+#  Duelos pactados entre clanes                              #
+##############################################################
+
+# Un duelo lo consienten los dos clanes: uno desafia con un monto y el otro
+# acepta ese mismo monto. Se apuesta dinero del banco del clan, nunca items.
+# El pozo lo retiene el sistema desde que arranca, asi que no depende de que el
+# perdedor cumpla su palabra. No se cuentan muertes ni se reparte puntaje: se
+# resuelve por rendicion o por tiempo cumplido. No da ningun derecho sobre
+# claims ajenos.
+duelo:
+  # Viene apagado. Sin esto no existen ni el comando ni la mecanica.
+  enabled: false
+
+  # Cuanto dura un duelo. Al vencer sin rendicion es empate y cada clan
+  # recupera su parte.
+  duracion-minutos: 30
+
+  # Cuanto vive un desafio sin aceptar.
+  espera-aceptacion-segundos: 120
+
+  apuesta:
+    minima: 0
+    maxima: 100000
+
+  # Si el duelo destapa el dano que otro plugin cancelo por tener el PvP
+  # individual apagado.
+  # - En false el duelo no le gana al toggle de cada jugador. Es lo seguro.
+  # - En true el duelo si le gana, y hay que entender la consecuencia: el que
+  #   consiente es el duenio del clan, asi que un miembro con el PvP apagado
+  #   queda alcanzado por una decision que no tomo el.
+  # Nunca destapa dano donde WorldGuard prohibe PvP, para no romper el spawn.
+  pisa-pvp-individual: false
+
+  # Anunciar el duelo a todo el servidor. En false a proposito: lo que vuelve
+  # toxica a una guerra es la tribuna, no la pelea.
+  aviso-global: false
+
+# Debug options:
 
 # Used to disable the in game notifier about update release
 # PLEASE NOTE: if you do not update betterteams to the latest version, you will not get bug fixes and new features from the regular updates

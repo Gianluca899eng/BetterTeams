@@ -25,6 +25,9 @@ import com.booksaw.betterTeams.customEvents.post.PostBetterTeamsReloadEvent;
 import com.booksaw.betterTeams.events.*;
 import com.booksaw.betterTeams.events.MCTeamManagement.BelowNameType;
 import com.booksaw.betterTeams.extension.ExtensionManager;
+import com.booksaw.betterTeams.luniatic.duelo.DueloCommand;
+import com.booksaw.betterTeams.luniatic.duelo.DueloDamageListener;
+import com.booksaw.betterTeams.luniatic.duelo.DueloManager;
 import com.booksaw.betterTeams.integrations.UltimateClaimsManager;
 import com.booksaw.betterTeams.integrations.WorldGuardManagerV7;
 import com.booksaw.betterTeams.integrations.apollo.ApolloManager;
@@ -73,6 +76,9 @@ public class Main extends JavaPlugin {
 	public static boolean placeholderAPI = false;
 	public boolean useHolograms = false;
 	public MCTeamManagement teamManagement;
+	/** Duelos pactados entre clanes. Apagado salvo que se encienda en el config. */
+	@Getter
+	public DueloManager dueloManager;
 	public ChatManagement chatManagement;
 	public WorldGuardManagerV7 wgManagement;
 	@Getter
@@ -194,6 +200,11 @@ public class Main extends JavaPlugin {
 
 	@Override
 	public void onDisable() {
+
+		// Antes que nada: los duelos en curso tienen dinero retenido y hay que devolverlo.
+		if (dueloManager != null) {
+			dueloManager.devolverTodo();
+		}
 
 		if (extensionManager != null) {
 			extensionManager.unloadExtensions();
@@ -342,6 +353,7 @@ public class Main extends JavaPlugin {
 	}
 
 	public void setupCommands() {
+		dueloManager = new DueloManager(getConfig().getConfigurationSection("duelo"));
 		teamCommand = new PermissionParentCommand(new CostManager("team"), new CooldownManager("team"), "team");
 		// add all sub commands here
 		teamCommand.addSubCommands(new CreateCommand(teamCommand), new LeaveCommand(), new DisbandCommand(),
@@ -359,6 +371,10 @@ public class Main extends JavaPlugin {
 
 		if (getConfig().getBoolean("disableCombat")) {
 			teamCommand.addSubCommand(new PvpCommand());
+		}
+
+		if (dueloManager.isHabilitado()) {
+			teamCommand.addSubCommand(new DueloCommand(dueloManager));
 		}
 		// only used if a team is only allowed a single owner
 		if (getConfig().getBoolean("singleOwner")) {
@@ -445,6 +461,15 @@ public class Main extends JavaPlugin {
 			}
 		}
 
+
+		if (dueloManager != null && dueloManager.isHabilitado()) {
+			// Una sola tarea cada 10 s para los vencimientos: nada por jugador ni por tick.
+			foliaLib.getScheduler().runTimer(task -> dueloManager.revisar(), 200L, 200L);
+			if (dueloManager.isPisaPvpIndividual()) {
+				getServer().getPluginManager().registerEvents(new DueloDamageListener(dueloManager), this);
+			}
+			getLogger().info("Duelos pactados: activos.");
+		}
 
 		getServer().getPluginManager().registerEvents((chatManagement = new ChatManagement()), this);
 		getServer().getPluginManager().registerEvents(new ScoreManagement(), this);
