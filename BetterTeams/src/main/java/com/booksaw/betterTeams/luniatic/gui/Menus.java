@@ -120,15 +120,8 @@ public final class Menus {
 
 			inv.setItem(22, boton(Material.GOLD_INGOT, "Banco del clan",
 					CUERPO + "Saldo: " + MARCA + "$" + clan.getBalance(),
-					"",
-					ETIQUETA + "/team deposit <monto>" + CUERPO + " para poner",
-					ETIQUETA + "/team withdraw <monto>" + CUERPO + " para sacar"));
-			holder.asignar(22, j -> {
-				j.closeInventory();
-				mensaje(j, "Saldo del clan: " + MARCA + "$" + clan.getBalance());
-				mensaje(j, "Para mover plata: " + ETIQUETA + "/team deposit <monto>"
-						+ CUERPO + " o " + ETIQUETA + "/team withdraw <monto>");
-			});
+					"", ETIQUETA + "Clic para poner o sacar plata"));
+			holder.asignar(22, Menus::abrirBanco);
 
 			inv.setItem(23, boton(Material.RED_BED, "Casa del clan",
 					"Te lleva a la casa del clan.",
@@ -138,8 +131,9 @@ public final class Menus {
 			holder.asignar(23, j -> comando(j, "team home"));
 
 			inv.setItem(24, boton(Material.OAK_SIGN, "Warps del clan",
-					"Los puntos guardados del clan."));
-			holder.asignar(24, j -> comando(j, "team warps"));
+					"Los puntos guardados del clan.",
+					"", ETIQUETA + "Clic para viajar a uno"));
+			holder.asignar(24, Menus::abrirWarps);
 
 			inv.setItem(29, boton(Material.SHIELD, "Aliados",
 					"Los clanes con los que no te pegas."));
@@ -158,13 +152,14 @@ public final class Menus {
 							: ERROR + "Solo el mando puede tocar esto."));
 			holder.asignar(32, j -> abrirAjustes(j));
 
-			inv.setItem(33, boton(Material.BARRIER, "Salir del clan",
-					ERROR + "Te vas del clan.",
-					"", ETIQUETA + "Clic para ver como"));
-			holder.asignar(33, j -> {
-				j.closeInventory();
-				mensaje(j, ERROR + "Para salir del clan escribi " + ETIQUETA + "/team leave");
-			});
+			inv.setItem(33, boton(Material.BARRIER, ERROR + "Salir del clan",
+					CUERPO + "Te vas de " + MARCA + limpiar(clan.getName()) + CUERPO + ".",
+					"", ETIQUETA + "Clic para salir"));
+			holder.asignar(33, j -> abrirConfirmacion(j, "Salir del clan",
+					new String[]{
+							CUERPO + "Te vas de " + MARCA + limpiar(clan.getName()) + CUERPO + ".",
+							CUERPO + "Perdes el acceso al cofre y al banco del clan."
+					}, "team leave", () -> abrirPortada(j)));
 		}
 
 		cerrar(inv, holder);
@@ -333,16 +328,24 @@ public final class Menus {
 		Inventory inv = crear(holder, "Miembros", (actual + 1) + "/" + paginas);
 		vaciarContenido(inv);
 
+		boolean mando = tieneMando(clan, jugador);
 		int desde = actual * porPagina;
 		for (int i = desde; i < miembros.size() && i - desde < porPagina; i++) {
 			TeamPlayer miembro = miembros.get(i);
 			boolean conectado = miembro.getPlayer() != null && miembro.getPlayer().isOnline();
 			String nombre = miembro.getPlayer() == null ? "?" : miembro.getPlayer().getName();
+			boolean yoMismo = nombre.equals(jugador.getName());
 			inv.setItem(CONTENIDO[i - desde], boton(
 					conectado ? Material.PLAYER_HEAD : Material.SKELETON_SKULL,
 					(conectado ? MARCA : CUERPO) + nombre,
 					CUERPO + "Rango: " + MARCA + rango(miembro.getRank()),
-					conectado ? MARCA + "Conectado" : CUERPO + "Desconectado"));
+					conectado ? MARCA + "Conectado" : CUERPO + "Desconectado",
+					"",
+					mando && !yoMismo ? ETIQUETA + "Clic para administrarlo"
+							: CUERPO + (yoMismo ? "Sos vos." : "")));
+			if (mando && !yoMismo) {
+				holder.asignar(CONTENIDO[i - desde], j -> abrirMiembro(j, nombre));
+			}
 		}
 
 		if (actual > 0) {
@@ -353,9 +356,12 @@ public final class Menus {
 			inv.setItem(SLOT_SIGUIENTE, boton(Material.SPECTRAL_ARROW, "Siguiente"));
 			holder.asignar(SLOT_SIGUIENTE, j -> abrirMiembros(j, actual + 1));
 		}
-		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver",
-				CUERPO + "Invitar: " + ETIQUETA + "/team invite <jugador>",
-				CUERPO + "Expulsar: " + ETIQUETA + "/team kick <jugador>"));
+		if (mando) {
+			inv.setItem(SLOT_CERRAR - 3, boton(Material.WRITABLE_BOOK, "Invitar gente",
+					CUERPO + "Elegi de los que estan conectados."));
+			holder.asignar(SLOT_CERRAR - 3, j -> abrirInvitar(j, 0));
+		}
+		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver"));
 		holder.asignar(SLOT_VOLVER, Menus::abrirPortada);
 		cerrar(inv, holder);
 		jugador.openInventory(inv);
@@ -456,34 +462,284 @@ public final class Menus {
 			abrirAjustes(j);
 		});
 
-		inv.setItem(22, boton(Material.NAME_TAG, "Nombre, etiqueta y color",
+		inv.setItem(22, boton(Material.MAGENTA_DYE, "Color del clan",
+				CUERPO + "Elegilo de una paleta."));
+		holder.asignar(22, Menus::abrirColores);
+
+		inv.setItem(24, boton(Material.NAME_TAG, "Nombre, etiqueta y descripcion",
+				CUERPO + "Lo unico que hay que escribir a mano,",
+				CUERPO + "porque es texto libre:",
+				"",
 				ETIQUETA + "/team name <nombre>",
 				ETIQUETA + "/team tag <etiqueta>",
-				ETIQUETA + "/team color <color>"));
-		holder.asignar(22, j -> {
-			j.closeInventory();
-			mensaje(j, "Nombre: " + ETIQUETA + "/team name <nombre>");
-			mensaje(j, "Etiqueta: " + ETIQUETA + "/team tag <etiqueta>");
-			mensaje(j, "Color: " + ETIQUETA + "/team color <color>");
-		});
-
-		inv.setItem(24, boton(Material.WRITABLE_BOOK, "Descripcion",
 				ETIQUETA + "/team description <texto>"));
 		holder.asignar(24, j -> {
 			j.closeInventory();
+			mensaje(j, "Nombre: " + ETIQUETA + "/team name <nombre>");
+			mensaje(j, "Etiqueta: " + ETIQUETA + "/team tag <etiqueta>");
 			mensaje(j, "Descripcion: " + ETIQUETA + "/team description <texto>");
 		});
 
-		inv.setItem(30, boton(Material.PAPER, "Chat del clan",
+		inv.setItem(29, boton(Material.PAPER, "Chat del clan",
 				CUERPO + "Prende o apaga el chat interno."));
-		holder.asignar(30, j -> comando(j, "team chat"));
+		holder.asignar(29, j -> comando(j, "team chat"));
 
-		inv.setItem(32, boton(Material.RED_BED, "Fijar la casa aca",
+		inv.setItem(31, boton(Material.RED_BED, "Fijar la casa aca",
 				CUERPO + "Deja la casa del clan donde estas parado."));
-		holder.asignar(32, j -> comando(j, "team sethome"));
+		holder.asignar(31, j -> ejecutarYVolver(j, "team sethome", () -> abrirAjustes(j)));
+
+		inv.setItem(33, boton(Material.TNT, ERROR + "Disolver el clan",
+				CUERPO + "Borra el clan para todos.",
+				CUERPO + "Se pierde el cofre y el banco."));
+		holder.asignar(33, j -> abrirConfirmacion(j, "Disolver el clan",
+				new String[]{
+						CUERPO + "Se borra " + MARCA + limpiar(clan.getName()) + CUERPO + " para todos.",
+						ERROR + "Se pierden los items del cofre y la plata del banco."
+				}, "team disband", () -> abrirAjustes(j)));
 
 		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver"));
 		holder.asignar(SLOT_VOLVER, Menus::abrirPortada);
+		cerrar(inv, holder);
+		jugador.openInventory(inv);
+	}
+
+	// --------------------------------------------------- acciones sobre un miembro
+
+	public static void abrirMiembro(Player jugador, String nombreMiembro) {
+		Team clan = Team.getTeam(jugador);
+		if (clan == null || !tieneMando(clan, jugador)) {
+			abrirPortada(jugador);
+			return;
+		}
+		MenuHolder holder = new MenuHolder();
+		Inventory inv = crear(holder, limpiar(nombreMiembro), "miembro del clan");
+
+		inv.setItem(20, boton(Material.EMERALD, "Ascender",
+				CUERPO + "Le da un escalon mas de mando."));
+		holder.asignar(20, j -> ejecutarYVolver(j, "team promote " + nombreMiembro,
+				() -> abrirMiembro(j, nombreMiembro)));
+
+		inv.setItem(22, boton(Material.REDSTONE, "Bajar de rango",
+				CUERPO + "Le saca un escalon de mando."));
+		holder.asignar(22, j -> ejecutarYVolver(j, "team demote " + nombreMiembro,
+				() -> abrirMiembro(j, nombreMiembro)));
+
+		inv.setItem(24, boton(Material.IRON_DOOR, ERROR + "Expulsar del clan",
+				CUERPO + "Lo saca del clan."));
+		holder.asignar(24, j -> abrirConfirmacion(j, "Expulsar a " + limpiar(nombreMiembro),
+				new String[]{
+						CUERPO + "Se va del clan y pierde el acceso",
+						CUERPO + "al cofre y al banco."
+				}, "team kick " + nombreMiembro, () -> abrirMiembros(j, 0)));
+
+		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver"));
+		holder.asignar(SLOT_VOLVER, j -> abrirMiembros(j, 0));
+		cerrar(inv, holder);
+		jugador.openInventory(inv);
+	}
+
+	// ----------------------------------------------------------------- invitar
+
+	public static void abrirInvitar(Player jugador, int pagina) {
+		Team clan = Team.getTeam(jugador);
+		if (clan == null || !tieneMando(clan, jugador)) {
+			abrirPortada(jugador);
+			return;
+		}
+		// Solo los conectados: invitar por lista evita tener que escribir el nombre,
+		// que es lo unico que un menu no puede pedir bien desde Bedrock.
+		List<Player> candidatos = new ArrayList<>();
+		for (Player otro : Bukkit.getOnlinePlayers()) {
+			if (Team.getTeam(otro) == null) {
+				candidatos.add(otro);
+			}
+		}
+
+		int porPagina = CONTENIDO.length;
+		int paginas = Math.max(1, (int) Math.ceil(candidatos.size() / (double) porPagina));
+		int actual = Math.max(0, Math.min(pagina, paginas - 1));
+
+		MenuHolder holder = new MenuHolder();
+		Inventory inv = crear(holder, "Invitar", (actual + 1) + "/" + paginas);
+		vaciarContenido(inv);
+
+		int desde = actual * porPagina;
+		for (int i = desde; i < candidatos.size() && i - desde < porPagina; i++) {
+			String nombre = candidatos.get(i).getName();
+			inv.setItem(CONTENIDO[i - desde], boton(Material.PLAYER_HEAD, MARCA + nombre,
+					CUERPO + "Sin clan",
+					"", ETIQUETA + "Clic para invitarlo"));
+			holder.asignar(CONTENIDO[i - desde], j -> ejecutarYVolver(j, "team invite " + nombre,
+					() -> abrirInvitar(j, actual)));
+		}
+		if (candidatos.isEmpty()) {
+			inv.setItem(CONTENIDO[10], boton(Material.COBWEB, "No hay a quien invitar",
+					CUERPO + "Todos los conectados ya tienen clan."));
+		}
+
+		if (actual > 0) {
+			inv.setItem(SLOT_ANTERIOR, boton(Material.SPECTRAL_ARROW, "Anterior"));
+			holder.asignar(SLOT_ANTERIOR, j -> abrirInvitar(j, actual - 1));
+		}
+		if (actual < paginas - 1) {
+			inv.setItem(SLOT_SIGUIENTE, boton(Material.SPECTRAL_ARROW, "Siguiente"));
+			holder.asignar(SLOT_SIGUIENTE, j -> abrirInvitar(j, actual + 1));
+		}
+		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver",
+				CUERPO + "A alguien desconectado: " + ETIQUETA + "/team invite <jugador>"));
+		holder.asignar(SLOT_VOLVER, j -> abrirMiembros(j, 0));
+		cerrar(inv, holder);
+		jugador.openInventory(inv);
+	}
+
+	// ------------------------------------------------------------------- banco
+
+	private static final int[] MONTOS = {100, 1000, 10000};
+
+	public static void abrirBanco(Player jugador) {
+		Team clan = Team.getTeam(jugador);
+		if (clan == null) {
+			abrirPortada(jugador);
+			return;
+		}
+		MenuHolder holder = new MenuHolder();
+		Inventory inv = crear(holder, "Banco", "$" + clan.getBalance());
+
+		inv.setItem(13, boton(Material.GOLD_BLOCK, "Saldo del clan",
+				CUERPO + "Hay " + MARCA + "$" + clan.getBalance() + CUERPO + " en el banco."));
+
+		// Montos fijos: es la unica forma de mover plata sin pedir que escriban.
+		int slot = 19;
+		for (int monto : MONTOS) {
+			inv.setItem(slot, boton(Material.GOLD_NUGGET, "Poner $" + monto,
+					CUERPO + "Saca " + MARCA + "$" + monto + CUERPO + " de lo tuyo",
+					CUERPO + "y lo pone en el banco del clan."));
+			int copia = monto;
+			holder.asignar(slot, j -> ejecutarYVolver(j, "team deposit " + copia, () -> abrirBanco(j)));
+			slot++;
+		}
+
+		slot = 25;
+		for (int i = MONTOS.length - 1; i >= 0; i--) {
+			int monto = MONTOS[i];
+			inv.setItem(slot, boton(Material.GOLD_INGOT, "Sacar $" + monto,
+					CUERPO + "Saca " + MARCA + "$" + monto + CUERPO + " del banco",
+					CUERPO + "y te lo pone a vos."));
+			holder.asignar(slot, j -> ejecutarYVolver(j, "team withdraw " + monto, () -> abrirBanco(j)));
+			slot--;
+		}
+
+		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver",
+				CUERPO + "Otro monto: " + ETIQUETA + "/team deposit <monto>"));
+		holder.asignar(SLOT_VOLVER, Menus::abrirPortada);
+		cerrar(inv, holder);
+		jugador.openInventory(inv);
+	}
+
+	// ------------------------------------------------------------------- warps
+
+	public static void abrirWarps(Player jugador) {
+		Team clan = Team.getTeam(jugador);
+		if (clan == null) {
+			abrirPortada(jugador);
+			return;
+		}
+		MenuHolder holder = new MenuHolder();
+		Inventory inv = crear(holder, "Warps", limpiar(clan.getName()));
+		vaciarContenido(inv);
+
+		int i = 0;
+		for (com.booksaw.betterTeams.Warp warp : clan.getWarps().getClone()) {
+			if (i >= CONTENIDO.length) {
+				break;
+			}
+			inv.setItem(CONTENIDO[i], boton(Material.LODESTONE, limpiar(warp.getName()),
+					CUERPO + "Mundo: " + MARCA + (warp.getLocation() == null || warp.getLocation().getWorld() == null
+							? "?" : warp.getLocation().getWorld().getName()),
+					"", ETIQUETA + "Clic para viajar"));
+			String nombre = warp.getName();
+			holder.asignar(CONTENIDO[i], j -> comando(j, "team warp " + nombre));
+			i++;
+		}
+		if (i == 0) {
+			inv.setItem(CONTENIDO[10], boton(Material.COBWEB, "Sin warps",
+					CUERPO + "Crear uno: " + ETIQUETA + "/team setwarp <nombre>"));
+		}
+
+		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver",
+				CUERPO + "Crear uno: " + ETIQUETA + "/team setwarp <nombre>"));
+		holder.asignar(SLOT_VOLVER, Menus::abrirPortada);
+		cerrar(inv, holder);
+		jugador.openInventory(inv);
+	}
+
+	// ----------------------------------------------------------------- colores
+
+	/** Los 16 de siempre, que es lo que acepta /team color. */
+	private static final String[][] COLORES = {
+			{"dark_red", "Rojo oscuro", "RED_WOOL"}, {"red", "Rojo", "PINK_WOOL"},
+			{"gold", "Dorado", "ORANGE_WOOL"}, {"yellow", "Amarillo", "YELLOW_WOOL"},
+			{"dark_green", "Verde oscuro", "GREEN_WOOL"}, {"green", "Verde", "LIME_WOOL"},
+			{"aqua", "Celeste", "LIGHT_BLUE_WOOL"}, {"dark_aqua", "Turquesa", "CYAN_WOOL"},
+			{"dark_blue", "Azul oscuro", "BLUE_WOOL"}, {"blue", "Azul", "LIGHT_BLUE_WOOL"},
+			{"light_purple", "Rosa", "MAGENTA_WOOL"}, {"dark_purple", "Violeta", "PURPLE_WOOL"},
+			{"white", "Blanco", "WHITE_WOOL"}, {"gray", "Gris", "LIGHT_GRAY_WOOL"},
+			{"dark_gray", "Gris oscuro", "GRAY_WOOL"}, {"black", "Negro", "BLACK_WOOL"}
+	};
+
+	public static void abrirColores(Player jugador) {
+		Team clan = Team.getTeam(jugador);
+		if (clan == null) {
+			abrirPortada(jugador);
+			return;
+		}
+		MenuHolder holder = new MenuHolder();
+		Inventory inv = crear(holder, "Color del clan", limpiar(clan.getName()));
+		vaciarContenido(inv);
+
+		for (int i = 0; i < COLORES.length && i < CONTENIDO.length; i++) {
+			String codigo = COLORES[i][0];
+			Material material = Material.matchMaterial(COLORES[i][2]);
+			inv.setItem(CONTENIDO[i], boton(material == null ? Material.WHITE_WOOL : material,
+					COLORES[i][1], "", ETIQUETA + "Clic para usarlo"));
+			holder.asignar(CONTENIDO[i], j -> ejecutarYVolver(j, "team color " + codigo,
+					() -> abrirColores(j)));
+		}
+
+		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver"));
+		holder.asignar(SLOT_VOLVER, Menus::abrirAjustes);
+		cerrar(inv, holder);
+		jugador.openInventory(inv);
+	}
+
+	// ------------------------------------------------------------ confirmacion
+
+	/**
+	 * Pantalla de confirmacion para lo que no tiene vuelta atras.
+	 *
+	 * <p>El "no" esta en el medio y el "si" corrido a un costado a proposito: lo
+	 * destructivo no deberia caer donde uno clickea por inercia.
+	 */
+	public static void abrirConfirmacion(Player jugador, String titulo, String[] aviso,
+			String comando, Runnable volver) {
+		MenuHolder holder = new MenuHolder();
+		Inventory inv = crear(holder, titulo, "confirmar");
+
+		List<String> lore = new ArrayList<>(Arrays.asList(aviso));
+		lore.add("");
+		lore.add(ERROR + "Esto no se puede deshacer.");
+		inv.setItem(13, boton(Material.PAPER, ERROR + titulo, lore.toArray(new String[0])));
+
+		inv.setItem(29, boton(Material.LIME_DYE, "No, volver",
+				CUERPO + "No pasa nada."));
+		holder.asignar(29, j -> volver.run());
+
+		inv.setItem(33, boton(Material.RED_DYE, ERROR + "Si, hacerlo",
+				CUERPO + "Se ejecuta ahora."));
+		holder.asignar(33, j -> comando(j, comando));
+
+		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver"));
+		holder.asignar(SLOT_VOLVER, j -> volver.run());
 		cerrar(inv, holder);
 		jugador.openInventory(inv);
 	}
@@ -567,9 +823,28 @@ public final class Menus {
 		return "Miembro";
 	}
 
+	/** Cierra el menu y ejecuta. Para lo que saca al jugador de la pantalla. */
 	private static void comando(Player jugador, String comando) {
 		jugador.closeInventory();
 		jugador.performCommand(comando);
+	}
+
+	/**
+	 * Ejecuta sin cerrar y vuelve a dibujar la pantalla, para que se vea el efecto.
+	 *
+	 * <p>Se delega en el comando a proposito: permisos, limites, baneos, costos y
+	 * cooldowns siguen valiendo, y el jugador recibe el mensaje de error del propio
+	 * plugin si algo no se puede.
+	 */
+	private static void ejecutarYVolver(Player jugador, String comando, Runnable volverADibujar) {
+		jugador.performCommand(comando);
+		volverADibujar.run();
+	}
+
+	/** Si puede administrar el clan. La palabra final la tiene igual el comando. */
+	private static boolean tieneMando(Team clan, Player jugador) {
+		TeamPlayer yo = clan.getTeamPlayer(jugador);
+		return yo != null && yo.getRank() != PlayerRank.DEFAULT;
 	}
 
 	private static void mensaje(Player jugador, String texto) {

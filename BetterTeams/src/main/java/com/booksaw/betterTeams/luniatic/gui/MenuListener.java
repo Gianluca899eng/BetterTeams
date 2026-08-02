@@ -1,5 +1,6 @@
 package com.booksaw.betterTeams.luniatic.gui;
 
+import com.booksaw.betterTeams.Main;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -34,9 +35,15 @@ public class MenuListener implements Listener {
 
 		MenuHolder holder = (MenuHolder) evento.getInventory().getHolder();
 		Consumer<Player> accion = holder.getAccion(evento.getSlot());
-		if (accion != null) {
-			accion.accept((Player) evento.getWhoClicked());
+		if (accion == null) {
+			return;
 		}
+
+		// Un tick despues, no dentro del evento: abrir un inventario mientras Bukkit
+		// todavia esta procesando el clic deja items fantasma del lado del cliente.
+		Player jugador = (Player) evento.getWhoClicked();
+		Main.plugin.getFoliaLib().getScheduler().runAtEntityLater(jugador,
+				() -> accion.accept(jugador), 1L);
 	}
 
 	@EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
