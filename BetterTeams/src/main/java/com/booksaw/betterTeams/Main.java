@@ -30,6 +30,7 @@ import com.booksaw.betterTeams.luniatic.duelo.DueloDamageListener;
 import com.booksaw.betterTeams.luniatic.duelo.DueloBossBar;
 import com.booksaw.betterTeams.luniatic.duelo.DueloDeathListener;
 import com.booksaw.betterTeams.luniatic.duelo.DueloPlaceholders;
+import com.booksaw.betterTeams.luniatic.duelo.DueloToggleListener;
 import com.booksaw.betterTeams.luniatic.duelo.DueloManager;
 import com.booksaw.betterTeams.luniatic.gui.MenuCommand;
 import com.booksaw.betterTeams.luniatic.gui.MenuListener;
@@ -488,6 +489,9 @@ public class Main extends JavaPlugin {
 			getServer().getPluginManager().registerEvents(new DueloDeathListener(dueloManager), this);
 			if (dueloManager.isPisaPvpIndividual()) {
 				getServer().getPluginManager().registerEvents(new DueloDamageListener(dueloManager), this);
+				// Cortar el toggle ataca el problema un paso antes que destapar el
+				// dano: sin esto, /pvp vuelve decorativo al duelo.
+				getServer().getPluginManager().registerEvents(new DueloToggleListener(dueloManager), this);
 			}
 			if (dueloManager.isBarraActiva()) {
 				DueloBossBar barra = new DueloBossBar(dueloManager);
