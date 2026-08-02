@@ -6,9 +6,11 @@ import com.booksaw.betterTeams.message.MessageManager;
 import org.bukkit.configuration.ConfigurationSection;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -355,8 +357,8 @@ public class DueloManager {
 		desafios.entrySet().removeIf(entrada -> entrada.getValue().vencio(ahora));
 
 		List<Duelo> terminados = new ArrayList<>();
-		for (Duelo duelo : new ArrayList<>(enCurso.values())) {
-			if (duelo.vencio(ahora) && !terminados.contains(duelo)) {
+		for (Duelo duelo : unicos(enCurso.values())) {
+			if (duelo.vencio(ahora)) {
 				terminados.add(duelo);
 			}
 		}
@@ -402,7 +404,7 @@ public class DueloManager {
 
 	/** Se llama al apagar el plugin: nadie se queda sin su parte del pozo. */
 	public void devolverTodo() {
-		for (Duelo duelo : new ArrayList<>(enCurso.values())) {
+		for (Duelo duelo : unicos(enCurso.values())) {
 			cerrar(duelo);
 			devolver(duelo, "duelo.cancelado_apagado");
 		}
@@ -410,6 +412,23 @@ public class DueloManager {
 		if (barra != null) {
 			barra.quitarTodas();
 		}
+	}
+
+	/**
+	 * Cada duelo una sola vez.
+	 *
+	 * <p>🔑 <b>El mapa de duelos en curso guarda el MISMO objeto bajo la clave de
+	 * cada clan participante</b> —los dos principales mas cada aliado—, asi que
+	 * recorrer sus valores lo devuelve dos veces o mas. Sin esto, cada vuelta de mas
+	 * paga la apuesta otra vez: al apagar el servidor los clanes cobraban su parte
+	 * una vez por participante. Se veia como un mensaje repetido y era una impresora
+	 * de dinero.
+	 *
+	 * <p>{@link Duelo} no implementa {@code equals}, asi que el conjunto deduplica
+	 * por identidad, que es exactamente lo que hace falta.
+	 */
+	static Collection<Duelo> unicos(Collection<Duelo> duelos) {
+		return new LinkedHashSet<>(duelos);
 	}
 
 	private void devolver(Duelo duelo, String referencia) {
@@ -467,8 +486,23 @@ public class DueloManager {
 		MessageManager.sendMessage(clan.getMembers().getOnlinePlayers(), referencia, argumentos);
 	}
 
+	/**
+	 * Formatea un monto para mostrarlo.
+	 *
+	 * <p>🔑 <b>Con {@link Locale#ROOT} a proposito.</b> {@code String.format("%.2f")}
+	 * usa el separador decimal del sistema, y esta maquina esta en espaniol: el
+	 * mensaje que le decia al jugador como aceptar el duelo le dictaba
+	 * {@code 0,00}, y el comando parsea con {@code BigDecimal}, que solo acepta
+	 * punto. O sea que el mensaje mandaba a escribir algo que el propio comando
+	 * rechazaba.
+	 *
+	 * <p>Y sin decimales cuando el monto es redondo, que es el caso normal.
+	 */
 	private String fmt(double monto) {
-		return String.format("%.2f", monto);
+		if (monto == Math.floor(monto) && !Double.isInfinite(monto)) {
+			return String.valueOf((long) monto);
+		}
+		return String.format(Locale.ROOT, "%.2f", monto);
 	}
 
 	/** Lo que hay que responderle a quien ejecuto el comando. */

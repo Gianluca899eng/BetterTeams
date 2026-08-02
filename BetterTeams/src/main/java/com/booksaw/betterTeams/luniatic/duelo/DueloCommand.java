@@ -57,7 +57,7 @@ public class DueloCommand extends TeamSubCommand {
 
 		double apuesta;
 		try {
-			apuesta = new BigDecimal(args[1]).doubleValue();
+			apuesta = new BigDecimal(normalizarMonto(args[1])).doubleValue();
 		} catch (Exception e) {
 			return new CommandResponse("duelo.monto_invalido");
 		}
@@ -76,6 +76,25 @@ public class DueloCommand extends TeamSubCommand {
 		}
 		ReferencedFormatMessage mensaje = new ReferencedFormatMessage(resultado.referencia, resultado.argumentos);
 		return new CommandResponse(resultado.exito, mensaje);
+	}
+
+	/**
+	 * Acepta el monto escrito como se escribe aca.
+	 *
+	 * <p>Si hay coma, manda la coma: es el separador decimal y los puntos son de
+	 * miles ({@code 1.000,50}). Si no hay coma, el punto es el decimal
+	 * ({@code 100.50}), que es lo que espera {@code BigDecimal}.
+	 *
+	 * <p>Existe porque el mensaje que explicaba como aceptar un duelo dictaba el
+	 * monto con el separador del sistema —{@code 0,00} en espaniol— y el comando lo
+	 * rechazaba: mandaba a escribir algo imposible.
+	 */
+	static String normalizarMonto(String texto) {
+		String limpio = texto.trim();
+		if (limpio.indexOf(',') >= 0) {
+			return limpio.replace(".", "").replace(',', '.');
+		}
+		return limpio;
 	}
 
 	@Override

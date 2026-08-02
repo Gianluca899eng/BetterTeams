@@ -245,7 +245,10 @@ public final class Menus {
 
 		Duelo duelo = manager.getDuelo(clan);
 		Desafio desafio = manager.getDesafioRecibido(clan);
-		boolean mando = tieneMando(clan, jugador);
+		// El comando de duelo exige ser duenio, no alcanza con tener mando. Si el
+		// menu mostrara el boton a un admin, seria un boton que no hace nada.
+		TeamPlayer yo = clan.getTeamPlayer(jugador);
+		boolean mando = yo != null && yo.getRank() == PlayerRank.OWNER;
 
 		if (duelo != null) {
 			Team rival = Team.getTeam(duelo.rivalDe(clan.getID()));
@@ -1056,11 +1059,16 @@ public final class Menus {
 		cerrar(inv, holder);
 	}
 
-	/** Sin decimales cuando el monto es redondo, que es el caso normal. */
+	/**
+	 * Sin decimales cuando el monto es redondo, y con {@link Locale#ROOT} siempre.
+	 *
+	 * <p>Este texto termina adentro de un comando, y el separador decimal del
+	 * sistema —coma, en espaniol— no lo acepta el parser.
+	 */
 	private static String fmt(double monto) {
 		return monto == Math.floor(monto) && !Double.isInfinite(monto)
 				? String.valueOf((long) monto)
-				: String.format("%.2f", monto);
+				: String.format(Locale.ROOT, "%.2f", monto);
 	}
 
 	private static void cerrar(Inventory inv, MenuHolder holder) {
