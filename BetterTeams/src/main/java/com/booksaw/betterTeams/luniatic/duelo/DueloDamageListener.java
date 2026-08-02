@@ -34,7 +34,10 @@ public class DueloDamageListener implements Listener {
 
 	@EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
 	public void alDaniar(EntityDamageByEntityEvent evento) {
-		if (!evento.isCancelled() || !manager.isHabilitado() || !manager.isPisaPvpIndividual()) {
+		// El orden importa: este listener corre en CADA evento de dano del servidor,
+		// mobs y granjas incluidos. Primero los chequeos que son una comparacion, y
+		// recien al final resolver el clan, que recorre todos los clanes.
+		if (!evento.isCancelled() || !manager.hayDuelos() || !manager.isPisaPvpIndividual()) {
 			return;
 		}
 		if (!(evento.getEntity() instanceof Player)) {

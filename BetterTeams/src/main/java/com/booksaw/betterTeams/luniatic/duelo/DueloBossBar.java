@@ -14,6 +14,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -52,6 +53,13 @@ public class DueloBossBar implements Listener {
 			quitar(clan);
 			return;
 		}
+		// Armar el titulo pasa por MiniMessage. Si no hay nadie de ese clan
+		// conectado no hay a quien mostrarselo, asi que ni se arma.
+		List<Player> conectados = clan.getMembers().getOnlinePlayers();
+		if (conectados.isEmpty()) {
+			return;
+		}
+
 		Team rival = Team.getTeam(duelo.rivalDe(clan.getID()));
 		int propias = duelo.getBajas(clan.getID());
 		int ajenas = rival == null ? 0 : duelo.getBajas(rival.getID());
@@ -76,7 +84,7 @@ public class DueloBossBar implements Listener {
 				+ CUERPO + "   quedan " + MARCA + minutos + CUERPO + " min");
 		double progreso = Math.min(1.0, propias / (double) objetivo);
 
-		for (Player jugador : clan.getMembers().getOnlinePlayers()) {
+		for (Player jugador : conectados) {
 			BossBar barra = barras.computeIfAbsent(jugador.getUniqueId(),
 					id -> Bukkit.createBossBar("", BarColor.RED, BarStyle.SEGMENTED_10));
 			barra.setTitle(titulo);

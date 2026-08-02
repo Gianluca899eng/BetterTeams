@@ -143,6 +143,18 @@ public class DueloManager {
 		return pisaPvpIndividual;
 	}
 
+	/**
+	 * Si hay algun duelo en curso.
+	 *
+	 * <p>Es el primer chequeo de los listeners de dano y de muerte, y por eso es un
+	 * {@code isEmpty()} sobre un mapa: resolver el clan de un jugador recorre todos
+	 * los clanes, asi que preguntarlo antes de saber si hace falta es pagar por nada.
+	 * Sin duelos en curso —o sea, casi siempre— el listener cuesta una comparacion.
+	 */
+	public boolean hayDuelos() {
+		return !enCurso.isEmpty();
+	}
+
 	public Duelo getDuelo(Team clan) {
 		return clan == null ? null : enCurso.get(clan.getID());
 	}

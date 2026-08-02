@@ -50,7 +50,9 @@ public class DueloPlaceholders extends PlaceholderExpansion {
 
 	@Override
 	public String onRequest(OfflinePlayer jugador, @NotNull String parametro) {
-		if (jugador == null || !manager.isHabilitado()) {
+		// TAB pide esto cada pocos segundos por jugador conectado, y resolver el clan
+		// recorre todos los clanes: sin duelos en curso se corta antes de tocarlo.
+		if (jugador == null || !manager.isHabilitado() || !manager.hayDuelos()) {
 			return "";
 		}
 		Team clan = Team.getTeam(jugador);

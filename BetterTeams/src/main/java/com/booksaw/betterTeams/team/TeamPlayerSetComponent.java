@@ -3,12 +3,15 @@ package com.booksaw.betterTeams.team;
 import com.booksaw.betterTeams.PlayerRank;
 import com.booksaw.betterTeams.TeamPlayer;
 import com.booksaw.betterTeams.message.Message;
+import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 public abstract class TeamPlayerSetComponent extends SetTeamComponent<TeamPlayer> {
@@ -16,12 +19,24 @@ public abstract class TeamPlayerSetComponent extends SetTeamComponent<TeamPlayer
 	/**
 	 * @return A list of players which are currently online and on this team
 	 */
+	/**
+	 * Resuelve por UUID contra los conectados.
+	 *
+	 * <p>La version anterior clonaba el set y pasaba por
+	 * {@code TeamPlayer#getPlayer()}, que llama a {@code Bukkit.getOfflinePlayer()}
+	 * <b>por cada miembro</b> — una llamada cara para despues preguntar solo si esta
+	 * conectado. {@code Bukkit.getPlayer(UUID)} es una busqueda directa y devuelve
+	 * null si no esta.
+	 */
 	public List<Player> getOnlinePlayers() {
-		return getClone().stream()
-				.map(TeamPlayer::getPlayer)
-				.filter(OfflinePlayer::isOnline)
-				.map(OfflinePlayer::getPlayer)
-				.collect(Collectors.toList());
+		List<Player> conectados = new ArrayList<>();
+		for (TeamPlayer teamPlayer : set) {
+			Player jugador = Bukkit.getPlayer(teamPlayer.getPlayerUUID());
+			if (jugador != null) {
+				conectados.add(jugador);
+			}
+		}
+		return conectados;
 	}
 
 	/**
@@ -49,12 +64,31 @@ public abstract class TeamPlayerSetComponent extends SetTeamComponent<TeamPlayer
 	 * @param p The player to get the team player for
 	 * @return The team player instance, or null if not found
 	 */
+	/**
+	 * 🔑 <b>El camino mas caliente del plugin.</b> Lo llama {@code contains()}, que a
+	 * su vez lo llama {@code getTeamUUID(OfflinePlayer)} <b>por cada clan</b> cada
+	 * vez que se resuelve el clan de un jugador — y eso pasa dos veces por cada
+	 * evento de dano.
+	 *
+	 * <p>La version anterior clonaba el set y comparaba
+	 * {@code teamPlayer.getPlayer().getUniqueId()}, o sea que hacia un
+	 * {@code Bukkit.getOfflinePlayer()} <b>por miembro de cada clan</b> para sacar un
+	 * UUID que el propio {@link TeamPlayer} ya tiene guardado al lado. Con 50 clanes
+	 * de 10 miembros eran 500 de esas llamadas por lookup.
+	 *
+	 * <p>Iterar el set directo no es menos seguro que clonarlo: clonar tambien lo
+	 * itera, asi que la exposicion a una modificacion concurrente es la misma. Lo
+	 * unico que cambia es que ya no aloca un set por clan.
+	 */
 	@Nullable
 	public TeamPlayer getTeamPlayer(@NotNull OfflinePlayer p) {
-		return getClone().stream()
-				.filter(teamPlayer -> p.getUniqueId().equals(teamPlayer.getPlayer().getUniqueId()))
-				.findFirst()
-				.orElse(null);
+		UUID buscado = p.getUniqueId();
+		for (TeamPlayer teamPlayer : set) {
+			if (buscado.equals(teamPlayer.getPlayerUUID())) {
+				return teamPlayer;
+			}
+		}
+		return null;
 	}
 
 	/**

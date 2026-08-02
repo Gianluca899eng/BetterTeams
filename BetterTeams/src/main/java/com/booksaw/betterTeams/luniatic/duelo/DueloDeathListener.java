@@ -27,6 +27,12 @@ public class DueloDeathListener implements Listener {
 
 	@EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
 	public void alMorir(PlayerDeathEvent evento) {
+		// Primero lo barato: sin duelos en curso no hay nada que contar, y resolver
+		// el clan de un jugador recorre todos los clanes.
+		if (!manager.hayDuelos()) {
+			return;
+		}
+
 		Player caido = evento.getEntity();
 		Player asesino = caido.getKiller();
 		if (asesino == null || asesino.equals(caido)) {
