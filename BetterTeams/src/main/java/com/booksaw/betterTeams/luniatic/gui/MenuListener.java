@@ -48,7 +48,7 @@ public class MenuListener implements Listener {
 		}
 
 		MenuHolder holder = (MenuHolder) clickeado.getHolder();
-		Consumer<Player> accion = holder.getAccion(evento.getSlot());
+		Consumer<Player> accion = holder.getAccion(evento.getSlot(), evento.isRightClick());
 		if (accion == null) {
 			return;
 		}

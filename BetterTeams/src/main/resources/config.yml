@@ -676,8 +676,10 @@ duelo:
   # caidas tenga; empate exacto, cada uno recupera lo suyo.
   duracion-minutos: 30
 
-  # Cuanto vive un desafio sin aceptar.
-  espera-aceptacion-segundos: 120
+  # Cuanto vive un desafio sin aceptar. Largo a proposito: se puede desafiar a un
+  # clan que no esta conectado, y tiene que encontrar la invitacion al entrar.
+  # Los desafios viven en memoria: un reinicio del servidor los borra.
+  espera-aceptacion-segundos: 86400
 
   apuesta:
     minima: 0

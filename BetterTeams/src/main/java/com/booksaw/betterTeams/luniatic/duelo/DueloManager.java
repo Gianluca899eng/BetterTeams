@@ -46,8 +46,13 @@ public class DueloManager {
 	private final boolean arrastraAliados;
 	private DueloBossBar barra;
 
-	/** Desafios sin aceptar, indexados por el clan retado. */
-	private final Map<UUID, Desafio> desafios = new HashMap<>();
+	/**
+	 * Desafios sin aceptar: clan retado -> (clan retador -> desafio).
+	 *
+	 * <p>Son varios por clan a proposito. Con uno solo, el segundo que te desafiaba
+	 * pisaba al primero sin que nadie se enterara.
+	 */
+	private final Map<UUID, Map<UUID, Desafio>> desafios = new HashMap<>();
 	/** Duelos en curso, indexados por CADA participante (dos entradas por duelo). */
 	private final Map<UUID, Duelo> enCurso = new HashMap<>();
 
@@ -142,17 +147,28 @@ public class DueloManager {
 		return clan == null ? null : enCurso.get(clan.getID());
 	}
 
-	/** El desafio que le mandaron a este clan y todavia no acepto, o null. */
-	public Desafio getDesafioRecibido(Team clan) {
+	/** Todos los desafios vigentes que le mandaron a este clan. */
+	public List<Desafio> getDesafiosRecibidos(Team clan) {
 		if (clan == null) {
-			return null;
+			return new ArrayList<>();
 		}
-		Desafio desafio = desafios.get(clan.getID());
-		if (desafio != null && desafio.vencio(System.currentTimeMillis())) {
-			desafios.remove(clan.getID());
-			return null;
+		Map<UUID, Desafio> recibidos = desafios.get(clan.getID());
+		if (recibidos == null) {
+			return new ArrayList<>();
 		}
-		return desafio;
+		long ahora = System.currentTimeMillis();
+		recibidos.values().removeIf(d -> d.vencio(ahora));
+		return new ArrayList<>(recibidos.values());
+	}
+
+	/** Rechaza un desafio. El que lo mando se entera. */
+	public Resultado rechazar(Team retado, Team retador) {
+		Map<UUID, Desafio> recibidos = desafios.get(retado.getID());
+		if (recibidos == null || recibidos.remove(retador.getID()) == null) {
+			return Resultado.error("duelo.sin_desafio");
+		}
+		avisar(retador, "duelo.rechazado", retado.getName());
+		return Resultado.ok("duelo.rechazaste", retador.getName());
 	}
 
 	/** Si el clan esta libre para pactar un duelo. */
@@ -194,27 +210,33 @@ public class DueloManager {
 			return Resultado.error("duelo.sin_economia");
 		}
 
-		Desafio recibido = desafios.get(retador.getID());
-		boolean esAceptacion = recibido != null && recibido.getRetador().equals(retado.getID());
+		// Si ese clan ya me habia desafiado, esto es una aceptacion.
+		Map<UUID, Desafio> misRecibidos = desafios.get(retador.getID());
+		Desafio recibido = misRecibidos == null ? null : misRecibidos.get(retado.getID());
+		if (recibido != null && recibido.vencio(System.currentTimeMillis())) {
+			misRecibidos.remove(retado.getID());
+			recibido = null;
+		}
 
-		if (esAceptacion) {
+		if (recibido != null) {
 			if (recibido.getApuesta() != apuesta) {
 				// Los dos tienen que estar de acuerdo con lo que se juega.
 				return Resultado.error("duelo.monto_distinto", fmt(recibido.getApuesta()));
 			}
-			desafios.remove(retador.getID());
+			misRecibidos.remove(retado.getID());
 			return arrancar(retado, retador, apuesta);
 		}
 
-		if (desafios.containsKey(retado.getID())
-				&& desafios.get(retado.getID()).getRetador().equals(retador.getID())) {
+		Map<UUID, Desafio> susRecibidos = desafios.computeIfAbsent(retado.getID(), id -> new HashMap<>());
+		if (susRecibidos.containsKey(retador.getID())) {
 			return Resultado.error("duelo.ya_desafiado");
 		}
 		if (apuesta > 0 && retador.getMoney() < apuesta) {
 			return Resultado.error("duelo.sin_fondos", fmt(apuesta));
 		}
 
-		desafios.put(retado.getID(), new Desafio(retador.getID(), apuesta, System.currentTimeMillis() + esperaMillis));
+		susRecibidos.put(retador.getID(),
+				new Desafio(retador.getID(), apuesta, System.currentTimeMillis() + esperaMillis));
 		avisar(retado, "duelo.recibido", retador.getName(), fmt(apuesta));
 		return Resultado.ok("duelo.enviado", retado.getName(), fmt(apuesta));
 	}
@@ -354,7 +376,10 @@ public class DueloManager {
 	public void revisar() {
 		long ahora = System.currentTimeMillis();
 
-		desafios.entrySet().removeIf(entrada -> entrada.getValue().vencio(ahora));
+		for (Map<UUID, Desafio> recibidos : desafios.values()) {
+			recibidos.values().removeIf(d -> d.vencio(ahora));
+		}
+		desafios.values().removeIf(Map::isEmpty);
 
 		List<Duelo> terminados = new ArrayList<>();
 		for (Duelo duelo : unicos(enCurso.values())) {

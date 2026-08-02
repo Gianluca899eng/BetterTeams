@@ -211,12 +211,16 @@ public final class Menus {
 							+ (rival == null ? "?" : duelo.getBajas(rival.getID())),
 					"", ETIQUETA + "Clic para ver el duelo");
 		}
-		Desafio desafio = manager.getDesafioRecibido(clan);
-		if (desafio != null) {
-			Team retador = Team.getTeam(desafio.getRetador());
+		List<Desafio> recibidos = manager.getDesafiosRecibidos(clan);
+		if (!recibidos.isEmpty()) {
+			Team retador = Team.getTeam(recibidos.get(0).getRetador());
 			return boton(Material.BELL, MARCA + "Te desafiaron",
 					CUERPO + (retador == null ? "?" : limpiar(retador.getName()))
-							+ CUERPO + " quiere duelo por " + MARCA + "$" + fmt(desafio.getApuesta()),
+							+ CUERPO + " quiere duelo por " + MARCA + "$"
+							+ fmt(recibidos.get(0).getApuesta()),
+					recibidos.size() > 1
+							? CUERPO + "y " + MARCA + (recibidos.size() - 1) + CUERPO + " invitacion(es) mas"
+							: "",
 					"", ETIQUETA + "Clic para responder");
 		}
 		return boton(Material.IRON_SWORD, "Duelos",
@@ -244,11 +248,10 @@ public final class Menus {
 		}
 
 		Duelo duelo = manager.getDuelo(clan);
-		Desafio desafio = manager.getDesafioRecibido(clan);
-		// El comando de duelo exige ser duenio, no alcanza con tener mando. Si el
-		// menu mostrara el boton a un admin, seria un boton que no hace nada.
-		TeamPlayer yo = clan.getTeamPlayer(jugador);
-		boolean mando = yo != null && yo.getRank() == PlayerRank.OWNER;
+		List<Desafio> recibidos = manager.getDesafiosRecibidos(clan);
+		// Lider y colider, igual que el comando: si el menu mostrara el boton a un
+		// miembro comun, seria un boton que no hace nada.
+		boolean mando = tieneMando(clan, jugador);
 
 		if (duelo != null) {
 			Team rival = Team.getTeam(duelo.rivalDe(clan.getID()));
@@ -289,32 +292,6 @@ public final class Menus {
 										+ CUERPO + " se lo lleva " + MARCA + nombreRival + CUERPO + "."
 						}, "team duelo rendirse", () -> abrirDuelos(j)));
 			}
-		} else if (desafio != null) {
-			Team retador = Team.getTeam(desafio.getRetador());
-			String nombreRetador = retador == null ? "?" : retador.getName();
-			inv.setItem(CABECERA, boton(Material.BELL, MARCA + "Te desafiaron",
-					CUERPO + limpiar(nombreRetador) + CUERPO + " quiere un duelo.",
-					CUERPO + "Apuesta: " + MARCA + "$" + fmt(desafio.getApuesta())
-							+ CUERPO + " cada uno.",
-					"",
-					CUERPO + "Si aceptas, los dos ponen esa plata",
-					CUERPO + "y se la lleva el que gane."));
-
-			if (mando) {
-				inv.setItem(FILA_B[1], boton(Material.LIME_DYE, "Aceptar el duelo",
-						CUERPO + "Empieza ahora mismo."));
-				holder.asignar(FILA_B[1], j -> abrirConfirmacion(j, "Aceptar el duelo",
-						new String[]{
-								CUERPO + "Se te van " + MARCA + "$" + fmt(desafio.getApuesta())
-										+ CUERPO + " del banco del clan.",
-								CUERPO + "Los recuperas doblados si ganan."
-						}, "team duelo " + nombreRetador + " " + fmt(desafio.getApuesta()),
-						() -> abrirDuelos(j)));
-
-				inv.setItem(FILA_B[5], boton(Material.RED_DYE, "Dejarlo pasar",
-						CUERPO + "El desafio vence solo."));
-				holder.asignar(FILA_B[5], Menus::abrirPortada);
-			}
 		} else {
 			inv.setItem(CABECERA, boton(Material.IRON_SWORD, "Duelos pactados",
 					CUERPO + "Los dos clanes tienen que estar de acuerdo:",
@@ -328,15 +305,90 @@ public final class Menus {
 					CUERPO + "entre personas, no permiso para romper."));
 
 			if (mando) {
-				inv.setItem(FILA_B[3], boton(Material.IRON_SWORD, "Desafiar a un clan",
-						CUERPO + "Elegi contra quien y cuanto."));
-				holder.asignar(FILA_B[3], j -> abrirElegirRival(j, 0));
+				inv.setItem(FILA_B[1], boton(Material.IRON_SWORD, "Desafiar a un clan",
+						CUERPO + "Elegi contra quien y cuanto.",
+						CUERPO + "No hace falta que esten conectados."));
+				holder.asignar(FILA_B[1], j -> abrirElegirRival(j, 0));
+
+				inv.setItem(FILA_B[5], boton(
+						recibidos.isEmpty() ? Material.GRAY_DYE : Material.BELL,
+						recibidos.isEmpty() ? CUERPO + "Sin invitaciones"
+								: MARCA + "Invitaciones (" + recibidos.size() + ")",
+						recibidos.isEmpty() ? CUERPO + "Nadie te desafio por ahora."
+								: CUERPO + "Clic para aceptarlas o rechazarlas"));
+				if (!recibidos.isEmpty()) {
+					holder.asignar(FILA_B[5], j -> abrirInvitaciones(j));
+				}
 			} else {
-				inv.setItem(FILA_B[3], boton(Material.BARRIER, CUERPO + "Solo el mando pacta duelos"));
+				inv.setItem(FILA_B[3], boton(Material.BARRIER,
+						CUERPO + "Solo lider y colider pactan duelos"));
 			}
 		}
 
 		volverA(inv, holder, Menus::abrirPortada);
+		jugador.openInventory(inv);
+	}
+
+	/**
+	 * Las invitaciones a duelo que le llegaron al clan.
+	 *
+	 * <p>Son varias porque varios clanes pueden desafiarte a la vez. Cada una se
+	 * acepta o se rechaza por separado, y rechazar avisa al que la mando: dejarla
+	 * vencer en silencio es peor que decir que no.
+	 */
+	public static void abrirInvitaciones(Player jugador) {
+		Team clan = Team.getTeam(jugador);
+		DueloManager manager = Main.plugin.getDueloManager();
+		if (clan == null || manager == null || !manager.isHabilitado()) {
+			abrirPortada(jugador);
+			return;
+		}
+		List<Desafio> recibidos = manager.getDesafiosRecibidos(clan);
+
+		MenuHolder holder = new MenuHolder();
+		Inventory inv = crear(holder, "Invitaciones", recibidos.size() + " sin responder");
+		vaciarContenido(inv);
+
+		boolean mando = tieneMando(clan, jugador);
+		int i = 0;
+		for (Desafio desafio : recibidos) {
+			if (i >= CONTENIDO.length) {
+				break;
+			}
+			Team retador = Team.getTeam(desafio.getRetador());
+			if (retador == null) {
+				continue;
+			}
+			String nombre = retador.getName();
+			String monto = fmt(desafio.getApuesta());
+			inv.setItem(CONTENIDO[i], boton(Material.BELL, limpiar(nombre),
+					CUERPO + "Apuesta: " + MARCA + "$" + monto + CUERPO + " cada uno",
+					CUERPO + "Ellos tienen " + MARCA + retador.getMembers().size()
+							+ CUERPO + " miembros",
+					"",
+					mando ? MARCA + "Clic izquierdo: aceptar" : CUERPO + "Solo lider y colider responden",
+					mando ? ERROR + "Clic derecho: rechazar" : ""));
+			if (mando) {
+				holder.asignarConClic(CONTENIDO[i],
+						j -> abrirConfirmacion(j, "Aceptar el duelo",
+								new String[]{
+										CUERPO + "Contra " + MARCA + limpiar(nombre) + CUERPO + ".",
+										CUERPO + "Se te van " + MARCA + "$" + monto
+												+ CUERPO + " del banco del clan.",
+										CUERPO + "Los recuperas doblados si ganan."
+								}, "team duelo " + nombre + " " + monto, () -> abrirInvitaciones(j)),
+						j -> ejecutarYVolver(j, "team duelo rechazar " + nombre,
+								() -> abrirInvitaciones(j)));
+			}
+			i++;
+		}
+
+		if (i == 0) {
+			inv.setItem(CONTENIDO[10], boton(Material.COBWEB, "Sin invitaciones",
+					CUERPO + "Nadie desafio a tu clan por ahora."));
+		}
+
+		volverA(inv, holder, Menus::abrirDuelos);
 		jugador.openInventory(inv);
 	}
 

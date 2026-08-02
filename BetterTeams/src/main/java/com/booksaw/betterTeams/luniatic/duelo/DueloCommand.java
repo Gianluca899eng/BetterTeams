@@ -46,6 +46,17 @@ public class DueloCommand extends TeamSubCommand {
 			return respuesta(manager.rendirse(team));
 		}
 
+		if (args[0].equalsIgnoreCase("rechazar")) {
+			if (args.length < 2) {
+				return new CommandResponse("duelo.falta_clan");
+			}
+			Team quienDesafio = Team.getTeam(args[1]);
+			if (quienDesafio == null) {
+				return new CommandResponse("noTeam");
+			}
+			return respuesta(manager.rechazar(team, quienDesafio));
+		}
+
 		if (args.length < 2) {
 			return new CommandResponse("duelo.falta_monto");
 		}
@@ -114,7 +125,7 @@ public class DueloCommand extends TeamSubCommand {
 
 	@Override
 	public String getArguments() {
-		return "<clan> <apuesta> | estado | rendirse";
+		return "<clan> <apuesta> | estado | rendirse | rechazar <clan>";
 	}
 
 	@Override
@@ -139,9 +150,13 @@ public class DueloCommand extends TeamSubCommand {
 		}
 	}
 
+	/**
+	 * Lider y colider. En BetterTeams eso es OWNER y ADMIN: pedir ADMIN deja pasar a
+	 * los dos, porque los rangos son escalonados. Un miembro comun no pacta duelos.
+	 */
 	@Override
 	public PlayerRank getDefaultRank() {
-		return PlayerRank.OWNER;
+		return PlayerRank.ADMIN;
 	}
 
 	@Override
