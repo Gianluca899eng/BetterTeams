@@ -59,6 +59,10 @@ public class DueloPlaceholders extends PlaceholderExpansion {
 		Duelo duelo = manager.getDuelo(clan);
 
 		switch (parametro.toLowerCase()) {
+			case "pvp_forzado":
+				// Para la condicion de TAB: cuando esto es "si", la linea de PvP del
+				// scoreboard muestra el estado forzado en vez del toggle personal.
+				return duelo != null && manager.isPisaPvpIndividual() ? "si" : "no";
 			case "aviso_pvp":
 				// Solo cuando el aviso significa algo: hay duelo y el override manda.
 				if (duelo == null || !manager.isPisaPvpIndividual()) {

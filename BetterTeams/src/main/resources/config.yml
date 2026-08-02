@@ -710,9 +710,14 @@ duelo:
   # con las caidas propias, o sea que mide cuanto falta para perder.
   barra: true
 
-  # Aviso cuando el override esta encendido y hay duelo en curso. Pensado para
-  # pegarse a la linea de PvP del scoreboard, con %luniaticclanes_aviso_pvp%.
+  # Aviso cuando el override esta encendido y hay duelo en curso, para quien quiera
+  # mostrarlo con %luniaticclanes_aviso_pvp%. Para el scoreboard conviene la otra
+  # via: %luniaticclanes_pvp_forzado% devuelve si/no y deja reemplazar la linea
+  # entera, en vez de pegarle un texto al estado propio y que quede "OFF - FORZADO".
   aviso-tab: ' &e- FORZADO'
+
+  # Logs de por que el override no destapo un dano. Solo para diagnosticar.
+  debug: false
 
 # Debug options:
 

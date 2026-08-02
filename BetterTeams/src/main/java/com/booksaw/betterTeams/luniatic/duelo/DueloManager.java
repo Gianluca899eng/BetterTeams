@@ -48,6 +48,7 @@ public class DueloManager {
 	private final boolean barraActiva;
 	private final String avisoTab;
 	private final boolean arrastraAliados;
+	private final boolean debug;
 	private DueloBossBar barra;
 
 	/**
@@ -73,6 +74,7 @@ public class DueloManager {
 			barraActiva = false;
 			avisoTab = "";
 			arrastraAliados = false;
+			debug = false;
 			return;
 		}
 		habilitado = seccion.getBoolean("enabled", false);
@@ -86,6 +88,12 @@ public class DueloManager {
 		barraActiva = seccion.getBoolean("barra", true);
 		avisoTab = seccion.getString("aviso-tab", "&#FF4554PvP forzado por duelo");
 		arrastraAliados = seccion.getBoolean("arrastra-aliados", true);
+		debug = seccion.getBoolean("debug", false);
+	}
+
+	/** Logs de por que el override no destapo un dano. Apagado salvo diagnostico. */
+	public boolean isDebug() {
+		return debug;
 	}
 
 	public boolean isArrastraAliados() {
