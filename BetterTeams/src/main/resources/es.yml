@@ -642,6 +642,8 @@ duelo:
   empate: '&#E4D9FFSe cumplio el tiempo sin rendicion: empate, cada uno recupera lo suyo.'
   cancelado_apagado: '&#E4D9FFEl servidor se esta apagando. Tu apuesta vuelve al banco del clan.'
   estado: '&#E4D9FFDuelo contra &#9235FF{0}&#E4D9FF. Pozo &#9235FF${1}&#E4D9FF. Quedan &#9235FF{2} &#E4D9FFminutos. Caidas: vos &#9235FF{3}&#E4D9FF, ellos &#9235FF{4}&#E4D9FF.'
+  arrastrado: '&#FF4554Tu aliado &#9235FF{0} &#FF4554entro en duelo contra &#9235FF{1}&#FF4554, y tu clan entra con el por &#9235FF{2} &#FF4554minutos. Pueden matarte.'
+  no_sos_principal: '&#FF4554Tu clan entro como aliado: el duelo lo pacto otro y solo ellos pueden rendirlo.'
   marcador_propio: '&#FF4554Cayo uno de los tuyos &#E4D9FF({0}) &#FF4554contra &#9235FF{1}&#FF4554.'
   marcador_rival: '&#E4D9FFCayo uno de &#9235FF{0} &#E4D9FF({1}).'
   gano_por_tiempo: '&#E4D9FFSe cumplio el tiempo y ganaron por &#9235FF{0}&#E4D9FF a &#9235FF{1}&#E4D9FF. Se llevan &#9235FF${2}&#E4D9FF.'

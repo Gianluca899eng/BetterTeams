@@ -7,8 +7,10 @@ import org.bukkit.configuration.ConfigurationSection;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -39,6 +41,7 @@ public class DueloManager {
 	private final int objetivoBajas;
 	private final boolean barraActiva;
 	private final String avisoTab;
+	private final boolean arrastraAliados;
 	private DueloBossBar barra;
 
 	/** Desafios sin aceptar, indexados por el clan retado. */
@@ -58,6 +61,7 @@ public class DueloManager {
 			objetivoBajas = 0;
 			barraActiva = false;
 			avisoTab = "";
+			arrastraAliados = false;
 			return;
 		}
 		habilitado = seccion.getBoolean("enabled", false);
@@ -70,6 +74,11 @@ public class DueloManager {
 		objetivoBajas = Math.max(1, seccion.getInt("objetivo-bajas", 10));
 		barraActiva = seccion.getBoolean("barra", true);
 		avisoTab = seccion.getString("aviso-tab", "&#FF4554PvP forzado por duelo");
+		arrastraAliados = seccion.getBoolean("arrastra-aliados", true);
+	}
+
+	public boolean isArrastraAliados() {
+		return arrastraAliados;
 	}
 
 	public String getAvisoTab() {
@@ -112,6 +121,13 @@ public class DueloManager {
 		}
 	}
 
+	/** Redibuja a los dos bandos enteros, aliados incluidos. */
+	private void dibujarTodos(Duelo duelo) {
+		for (UUID id : duelo.todosLosClanes()) {
+			dibujar(Team.getTeam(id));
+		}
+	}
+
 	public boolean isHabilitado() {
 		return habilitado;
 	}
@@ -142,13 +158,14 @@ public class DueloManager {
 		return clan != null && !enCurso.containsKey(clan.getID());
 	}
 
-	/** True solo si los dos clanes estan en el mismo duelo en curso. */
+	/** True solo si estan en el mismo duelo y en bandos opuestos. */
 	public boolean sonRivales(Team uno, Team otro) {
 		if (uno == null || otro == null || uno.getID().equals(otro.getID())) {
 			return false;
 		}
 		Duelo duelo = enCurso.get(uno.getID());
-		return duelo != null && duelo.participa(otro.getID());
+		// Aliados del mismo bando NO son rivales: no se pegan entre ellos.
+		return duelo != null && duelo.getBandoRival(uno.getID()).contains(otro.getID());
 	}
 
 	/**
@@ -213,22 +230,41 @@ public class DueloManager {
 			otroClan.setMoney(otroClan.getMoney() - apuesta);
 		}
 
-		Duelo duelo = new Duelo(unClan.getID(), otroClan.getID(), apuesta,
-				System.currentTimeMillis() + duracionMillis);
-		enCurso.put(unClan.getID(), duelo);
-		enCurso.put(otroClan.getID(), duelo);
+		// Los aliados se congelan al arrancar: aliarse en medio del duelo no trae
+		// refuerzos, y desaliarse no saca a nadie del lio en el que ya estaba.
+		Duelo duelo = new Duelo(unClan.getID(), aliadosLibres(unClan),
+				otroClan.getID(), aliadosLibres(otroClan),
+				apuesta, System.currentTimeMillis() + duracionMillis);
+		for (UUID id : duelo.todosLosClanes()) {
+			enCurso.put(id, duelo);
+		}
 
 		long minutos = duracionMillis / 60_000L;
 		avisar(unClan, "duelo.arranco", otroClan.getName(), fmt(duelo.getPozo()), String.valueOf(minutos));
 		avisar(otroClan, "duelo.arranco", unClan.getName(), fmt(duelo.getPozo()), String.valueOf(minutos));
+
+		// Al aliado hay que decirle que quedo adentro y por que: el no acepto nada.
+		for (UUID id : duelo.todosLosClanes()) {
+			if (duelo.esPrincipal(id)) {
+				continue;
+			}
+			Team aliado = Team.getTeam(id);
+			if (aliado != null) {
+				Team suPrincipal = Team.getTeam(duelo.getPrincipalDe(id));
+				Team suRival = Team.getTeam(duelo.rivalDe(id));
+				avisar(aliado, "duelo.arrastrado",
+						suPrincipal == null ? "?" : suPrincipal.getName(),
+						suRival == null ? "?" : suRival.getName(),
+						String.valueOf(minutos));
+			}
+		}
 
 		if (avisoGlobal) {
 			MessageManager.sendMessage(new ArrayList<>(Main.plugin.getServer().getOnlinePlayers()),
 					"duelo.aviso_global", unClan.getName(), otroClan.getName());
 		}
 
-		dibujar(unClan);
-		dibujar(otroClan);
+		dibujarTodos(duelo);
 		return Resultado.ok("duelo.arranco_confirmacion", unClan.getName());
 	}
 
@@ -241,6 +277,10 @@ public class DueloManager {
 		Duelo duelo = enCurso.get(clan.getID());
 		if (duelo == null) {
 			return Resultado.error("duelo.sin_duelo");
+		}
+		// Un aliado no puede rendir un duelo que no pacto ni pago.
+		if (!duelo.esPrincipal(clan.getID())) {
+			return Resultado.error("duelo.no_sos_principal");
 		}
 		Team rival = Team.getTeam(duelo.rivalDe(clan.getID()));
 		cerrar(duelo);
@@ -269,21 +309,43 @@ public class DueloManager {
 			return;
 		}
 		Duelo duelo = enCurso.get(clanCaido.getID());
+
+		// Solo cuentan las caidas de los dos clanes que pactaron. Un aliado que cae
+		// no mueve el marcador: si contara, sumar aliados te haria mas facil perder
+		// y un aliado podria tirar el duelo a proposito.
+		if (!duelo.esPrincipal(clanCaido.getID())) {
+			return;
+		}
+
 		int bajas = duelo.sumarBaja(clanCaido.getID());
+		Team principalRival = Team.getTeam(duelo.rivalDe(clanCaido.getID()));
 
 		if (bajas >= objetivoBajas) {
 			cerrar(duelo);
-			pagar(clanAtacante, duelo.getPozo());
-			avisar(clanAtacante, "duelo.gano", clanCaido.getName(), fmt(duelo.getPozo()));
-			avisar(clanCaido, "duelo.perdio", clanAtacante.getName(), fmt(duelo.getApuesta()));
+			if (principalRival != null) {
+				pagar(principalRival, duelo.getPozo());
+				avisar(principalRival, "duelo.gano", clanCaido.getName(), fmt(duelo.getPozo()));
+			}
+			avisar(clanCaido, "duelo.perdio",
+					principalRival == null ? "?" : principalRival.getName(), fmt(duelo.getApuesta()));
 			return;
 		}
 
 		String marcador = bajas + "/" + objetivoBajas;
-		avisar(clanCaido, "duelo.marcador_propio", marcador, clanAtacante.getName());
-		avisar(clanAtacante, "duelo.marcador_rival", clanCaido.getName(), marcador);
-		dibujar(clanCaido);
-		dibujar(clanAtacante);
+		// El marcador lo ven los dos bandos enteros, aliados incluidos: estan peleando.
+		for (UUID id : duelo.getBando(clanCaido.getID())) {
+			Team clan = Team.getTeam(id);
+			if (clan != null) {
+				avisar(clan, "duelo.marcador_propio", marcador, clanAtacante.getName());
+			}
+		}
+		for (UUID id : duelo.getBandoRival(clanCaido.getID())) {
+			Team clan = Team.getTeam(id);
+			if (clan != null) {
+				avisar(clan, "duelo.marcador_rival", clanCaido.getName(), marcador);
+			}
+		}
+		dibujarTodos(duelo);
 	}
 
 	/** Revisa vencimientos. La llama una tarea repetitiva, no cada evento. */
@@ -363,12 +425,30 @@ public class DueloManager {
 		}
 	}
 
+	/**
+	 * Los aliados que van a entrar con el clan. Solo aliados directos: si entraran
+	 * los aliados de los aliados, una pelea de dos clanes se lleva puesto medio
+	 * servidor. Se saltea a los que ya esten en otro duelo.
+	 */
+	private Set<UUID> aliadosLibres(Team clan) {
+		Set<UUID> lista = new LinkedHashSet<>();
+		if (!arrastraAliados) {
+			return lista;
+		}
+		for (UUID id : clan.getAllies().getClone()) {
+			if (!enCurso.containsKey(id) && Team.getTeam(id) != null) {
+				lista.add(id);
+			}
+		}
+		return lista;
+	}
+
 	/** Punto unico de cierre, asi ninguna salida se olvida de sacar la barra. */
 	private void cerrar(Duelo duelo) {
-		enCurso.remove(duelo.getClanA());
-		enCurso.remove(duelo.getClanB());
-		borrarBarra(Team.getTeam(duelo.getClanA()));
-		borrarBarra(Team.getTeam(duelo.getClanB()));
+		for (UUID id : duelo.todosLosClanes()) {
+			enCurso.remove(id);
+			borrarBarra(Team.getTeam(id));
+		}
 	}
 
 	private void pagar(Team clan, double monto) {

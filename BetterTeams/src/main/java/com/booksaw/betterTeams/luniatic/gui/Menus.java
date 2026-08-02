@@ -266,7 +266,15 @@ public final class Menus {
 					CUERPO + "Vuelve a leer el marcador."));
 			holder.asignar(FILA_B[1], Menus::abrirDuelos);
 
-			if (mando) {
+			if (!duelo.esPrincipal(clan.getID())) {
+				Team principal = Team.getTeam(duelo.getPrincipalDe(clan.getID()));
+				inv.setItem(FILA_B[5], boton(Material.SHIELD, CUERPO + "Entraste como aliado",
+						CUERPO + "El duelo lo pacto " + MARCA
+								+ (principal == null ? "?" : limpiar(principal.getName())) + CUERPO + ".",
+						CUERPO + "Solo ellos pueden rendirlo, y el pozo",
+						CUERPO + "es de ellos: ustedes solo pelean.",
+						"", ERROR + "Mientras dure, pueden matarte."));
+			} else if (mando) {
 				inv.setItem(FILA_B[5], boton(Material.WHITE_BANNER, ERROR + "Rendirse",
 						CUERPO + "Cortas el duelo y el pozo entero",
 						CUERPO + "se lo lleva " + MARCA + nombreRival + CUERPO + ".",

@@ -57,9 +57,21 @@ public class DueloBossBar implements Listener {
 		int ajenas = rival == null ? 0 : duelo.getBajas(rival.getID());
 		int objetivo = Math.max(1, manager.getObjetivoBajas());
 		long minutos = duelo.segundosRestantes(System.currentTimeMillis()) / 60;
+		String nombreRival = rival == null ? "?" : Texto.limpiar(rival.getName());
 
-		String titulo = Texto.col(CUERPO + "Duelo contra " + MARCA
-				+ (rival == null ? "?" : Texto.limpiar(rival.getName()))
+		// Al aliado hay que decirle de quien es el duelo: el no lo pacto, y su barra
+		// tiene que explicarle por que de golpe lo pueden matar.
+		String encabezado;
+		if (duelo.esPrincipal(clan.getID())) {
+			encabezado = CUERPO + "Duelo contra " + MARCA + nombreRival;
+		} else {
+			Team principal = Team.getTeam(duelo.getPrincipalDe(clan.getID()));
+			encabezado = CUERPO + "Apoyando a " + MARCA
+					+ (principal == null ? "?" : Texto.limpiar(principal.getName()))
+					+ CUERPO + " contra " + MARCA + nombreRival;
+		}
+
+		String titulo = Texto.col(encabezado
 				+ CUERPO + "   caidas " + MARCA + propias + CUERPO + " - " + MARCA + ajenas
 				+ CUERPO + "   quedan " + MARCA + minutos + CUERPO + " min");
 		double progreso = Math.min(1.0, propias / (double) objetivo);

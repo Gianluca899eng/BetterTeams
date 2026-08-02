@@ -696,6 +696,14 @@ duelo:
   # toxica a una guerra es la tribuna, no la pelea.
   aviso-global: false
 
+  # Si los aliados de cada clan entran al duelo con el.
+  # OJO: el aliado no consintio nada. Con pisa-pvp-individual encendido, alguien
+  # con el PvP apagado queda matable por una pelea que no eligio. Se avisa por
+  # chat, por la barra y por el tab, pero el que decide es el clan que lo arrastra.
+  # Entran solo los aliados DIRECTOS, y solo los que no esten ya en otro duelo.
+  # Los aliados pelean pero no ponen ni cobran el pozo, y sus caidas no cuentan.
+  arrastra-aliados: true
+
   # Barra de progreso mientras dura el duelo: rival, marcador y tiempo. Se llena
   # con las caidas propias, o sea que mide cuanto falta para perder.
   barra: true
