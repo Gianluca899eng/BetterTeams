@@ -13,9 +13,15 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * /team duelo &lt;clan&gt; &lt;apuesta&gt; - desafia, o acepta si ese clan ya te desafio
+ * /team duelo &lt;clan&gt; &lt;apuesta&gt; [duracion] - desafia a otro clan
+ * /team duelo aceptar &lt;clan&gt; - acepta el desafio que te mandaron, con sus condiciones
+ * /team duelo rechazar &lt;clan&gt; - lo rechaza
  * /team duelo estado - muestra el duelo en curso
  * /team duelo rendirse - se rinde y le deja el pozo al rival
+ *
+ * <p>Repetir el comando de desafio con el mismo monto tambien acepta, y se deja andando
+ * por si alguien lo tiene en la memoria. Pero la via buena es {@code aceptar}: el desafio
+ * ya dice cuanto y cuanto dura, asi que hacerlo escribir de nuevo es friccion.
  */
 public class DueloCommand extends TeamSubCommand {
 
@@ -38,12 +44,25 @@ public class DueloCommand extends TeamSubCommand {
 					rival == null ? "?" : rival.getName(),
 					String.format("%.2f", duelo.getPozo()),
 					String.valueOf(duelo.segundosRestantes(System.currentTimeMillis()) / 60),
-					duelo.getBajas(team.getID()) + "/" + manager.getObjetivoBajas(),
-					rival == null ? "?" : duelo.getBajas(rival.getID()) + "/" + manager.getObjetivoBajas()));
+					duelo.getBajas(team.getID()) + "/" + duelo.getObjetivoBajas(),
+					rival == null ? "?" : duelo.getBajas(rival.getID()) + "/" + duelo.getObjetivoBajas()));
 		}
 
 		if (args[0].equalsIgnoreCase("rendirse")) {
 			return respuesta(manager.rendirse(team));
+		}
+
+		// Aceptar no repite el monto ni la duracion: el desafio ya los dice, y hacerlos
+		// escribir de nuevo es friccion. El consentimiento es el acto de aceptar.
+		if (args[0].equalsIgnoreCase("aceptar")) {
+			if (args.length < 2) {
+				return new CommandResponse("duelo.falta_clan");
+			}
+			Team quienDesafio = Team.getTeam(args[1]);
+			if (quienDesafio == null) {
+				return new CommandResponse("noTeam");
+			}
+			return respuesta(manager.aceptar(team, quienDesafio));
 		}
 
 		if (args[0].equalsIgnoreCase("rechazar")) {
@@ -76,7 +95,31 @@ public class DueloCommand extends TeamSubCommand {
 			return new CommandResponse("duelo.monto_invalido");
 		}
 
-		return respuesta(manager.desafiar(team, rival, apuesta));
+		// Se pasa null cuando no la eligio, y NO el preset por defecto: si esto termina
+		// siendo una aceptacion, el manager tiene que poder tomar la que pacto el otro.
+		// Con el default puesto aca, aceptar un duelo de dias era imposible.
+		DueloManager.Duracion duracion = null;
+		if (args.length >= 3) {
+			duracion = manager.duracionPorId(args[2]);
+			if (duracion == null) {
+				return new CommandResponse(false,
+						new ReferencedFormatMessage("duelo.duracion_invalida", idsDeDuracion()));
+			}
+		}
+
+		return respuesta(manager.desafiar(team, rival, apuesta, duracion));
+	}
+
+	/** Los ids pactables, para el mensaje de error y el tab complete. */
+	private String idsDeDuracion() {
+		StringBuilder sb = new StringBuilder();
+		for (DueloManager.Duracion d : manager.getDuraciones()) {
+			if (sb.length() > 0) {
+				sb.append(", ");
+			}
+			sb.append(d.id);
+		}
+		return sb.toString();
 	}
 
 	private CommandResponse respuesta(DueloManager.Resultado resultado) {
@@ -90,22 +133,14 @@ public class DueloCommand extends TeamSubCommand {
 	}
 
 	/**
-	 * Acepta el monto escrito como se escribe aca.
+	 * Acepta el monto escrito como se escribe aca, con sufijo de escala si lo tiene.
 	 *
-	 * <p>Si hay coma, manda la coma: es el separador decimal y los puntos son de
-	 * miles ({@code 1.000,50}). Si no hay coma, el punto es el decimal
-	 * ({@code 100.50}), que es lo que espera {@code BigDecimal}.
-	 *
-	 * <p>Existe porque el mensaje que explicaba como aceptar un duelo dictaba el
-	 * monto con el separador del sistema —{@code 0,00} en espaniol— y el comando lo
-	 * rechazaba: mandaba a escribir algo imposible.
+	 * <p>La logica vive en {@link com.booksaw.betterTeams.luniatic.Montos} porque los
+	 * comandos del banco toman montos escritos igual. Esto queda como delegacion para
+	 * no cambiar el punto de entrada que ya usaban las pruebas.
 	 */
 	static String normalizarMonto(String texto) {
-		String limpio = texto.trim();
-		if (limpio.indexOf(',') >= 0) {
-			return limpio.replace(".", "").replace(',', '.');
-		}
-		return limpio;
+		return com.booksaw.betterTeams.luniatic.Montos.normalizar(texto);
 	}
 
 	@Override
@@ -125,7 +160,7 @@ public class DueloCommand extends TeamSubCommand {
 
 	@Override
 	public String getArguments() {
-		return "<clan> <apuesta> | estado | rendirse | rechazar <clan>";
+		return "<clan> <apuesta> [duracion] | aceptar <clan> | estado | rendirse | rechazar <clan>";
 	}
 
 	@Override
@@ -135,18 +170,29 @@ public class DueloCommand extends TeamSubCommand {
 
 	@Override
 	public int getMaximumArguments() {
-		return 2;
+		return 3;
 	}
 
 	@Override
 	public void onTabComplete(List<String> options, CommandSender sender, String label, String[] args) {
 		if (args.length == 1) {
+			options.add("aceptar");
 			options.add("estado");
 			options.add("rendirse");
 			Team propio = getMyTeam(sender);
 			addTeamStringList(options, args[0], propio != null ? ImmutableSet.of(propio.getID()) : null, null);
 		} else if (args.length == 2) {
-			options.add("<apuesta>");
+			// Con aceptar/rechazar el segundo argumento es un clan, no un monto.
+			if (args[0].equalsIgnoreCase("aceptar") || args[0].equalsIgnoreCase("rechazar")) {
+				Team propio = getMyTeam(sender);
+				addTeamStringList(options, args[1], propio != null ? ImmutableSet.of(propio.getID()) : null, null);
+			} else {
+				options.add("<apuesta>");
+			}
+		} else if (args.length == 3) {
+			for (DueloManager.Duracion duracion : manager.getDuraciones()) {
+				options.add(duracion.id);
+			}
 		}
 	}
 

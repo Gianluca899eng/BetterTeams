@@ -35,16 +35,30 @@ public class Duelo {
 	/** Lo que aporto cada clan principal. El pozo total es el doble. */
 	private final double apuesta;
 	private final long finMillis;
+	/**
+	 * Cuanto se pacto que durara. Va en el duelo y no en el manager porque cada duelo
+	 * elige su duracion: sin esto la barra de progreso no sabria contra que medir.
+	 */
+	private final long duracionMillis;
+	/**
+	 * Caidas que hacen falta para ganar, pactadas junto con la duracion.
+	 *
+	 * <p>Escala con el preset a proposito: con un objetivo fijo, un duelo de siete dias
+	 * se resolveria en la primera escaramuza y elegir la duracion no significaria nada.
+	 */
+	private final int objetivoBajas;
 	/** Bajas de cada clan principal. Vive y muere con el duelo. */
 	private int bajasA;
 	private int bajasB;
 
 	public Duelo(UUID clanA, Set<UUID> aliadosA, UUID clanB, Set<UUID> aliadosB,
-			double apuesta, long finMillis) {
+			double apuesta, long finMillis, long duracionMillis, int objetivoBajas) {
 		this.clanA = clanA;
 		this.clanB = clanB;
 		this.apuesta = apuesta;
 		this.finMillis = finMillis;
+		this.duracionMillis = duracionMillis;
+		this.objetivoBajas = objetivoBajas;
 
 		this.bandoA = new LinkedHashSet<>();
 		this.bandoA.add(clanA);
@@ -77,6 +91,33 @@ public class Duelo {
 
 	public double getPozo() {
 		return apuesta * 2;
+	}
+
+	public long getDuracionMillis() {
+		return duracionMillis;
+	}
+
+	public int getObjetivoBajas() {
+		return objetivoBajas;
+	}
+
+	/**
+	 * Repone el marcador al levantar un duelo guardado.
+	 *
+	 * <p>Sin esto, un reinicio a mitad de duelo devolveria el marcador a cero y el que
+	 * iba ganando perderia su ventaja: seria peor que cancelarlo.
+	 */
+	public void reponerBajas(int bajasA, int bajasB) {
+		this.bajasA = Math.max(0, bajasA);
+		this.bajasB = Math.max(0, bajasB);
+	}
+
+	public int getBajasA() {
+		return bajasA;
+	}
+
+	public int getBajasB() {
+		return bajasB;
 	}
 
 	public long getFinMillis() {

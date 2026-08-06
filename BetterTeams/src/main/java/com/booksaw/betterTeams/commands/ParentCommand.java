@@ -274,15 +274,20 @@ public class ParentCommand extends SubCommand {
 
 	@Override
 	public boolean checkAsync(String[] args) {
+		// El subcomando por defecto se resuelve tambien aca: la decision de hilo tiene que
+		// tomarse sobre el comando que realmente se va a ejecutar, no sobre la lista vacia.
 		if (args.length == 0) {
-			return true;
+			if (subcomandoPorDefecto == null) {
+				return true;
+			}
+			args = new String[]{subcomandoPorDefecto};
 		}
 		SubCommand command = subCommands.get(args[0].toLowerCase());
 		if (command == null) {
 			return true;
 		}
-		return command.runAsync(removeFirstElement(args));
-
+		// checkAsync y no runAsync, para que un ParentCommand anidado siga bajando.
+		return command.checkAsync(removeFirstElement(args));
 	}
 
 }

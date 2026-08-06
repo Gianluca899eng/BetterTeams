@@ -355,6 +355,16 @@ public class Team {
 		}
 
 		tag = Optional.ofNullable(storage.getString(StoredTeamValue.TAG)).orElse("");
+		// Los clanes creados antes de que existiera la etiqueta por defecto la tienen
+		// vacia, y con el tag vacio getTag() cae al nombre completo: en el chat eso es
+		// justo lo que la etiqueta viene a evitar. Se rellena una sola vez, al cargar.
+		if (tag.isEmpty()) {
+			String derivada = etiquetaPorDefecto(name);
+			if (!derivada.isEmpty()) {
+				tag = derivada;
+				storage.set(StoredTeamValue.TAG, derivada);
+			}
+		}
 	}
 
 	/**
@@ -420,8 +430,8 @@ public class Team {
 		saveAnchoredPlayers();
 		level = 1;
 		storage.set(StoredTeamValue.LEVEL, 1);
-		tag = "";
-		storage.set(StoredTeamValue.TAG, "");
+		tag = etiquetaPorDefecto(name);
+		storage.set(StoredTeamValue.TAG, tag);
 		/*
 		 * do not need to save config as createNewTeam saves the config after more
 		 * settings modified
@@ -565,6 +575,38 @@ public class Team {
 
 	public String getOriginalTag() {
 		return tag != null ? tag : "";
+	}
+
+	/**
+	 * Etiqueta corta derivada del nombre, para que un clan recien creado ya tenga una.
+	 *
+	 * <p>Sin esto el tag arranca vacio y {@code getTag()} cae al nombre completo, que es
+	 * exactamente lo que no queremos en el chat: el nombre entero va al tab y al nombre
+	 * flotante, donde sobra lugar. El lider la puede cambiar despues, por el menu o por
+	 * {@code /team tag}.
+	 *
+	 * <p>Se sacan primero los codigos de color y despues todo lo que no sea letra o
+	 * numero. El orden importa: al reves, un {@code &#7162FF} dejaria "7162FF" como
+	 * etiqueta.
+	 */
+	public static String etiquetaPorDefecto(String nombre) {
+		if (nombre == null) {
+			return "";
+		}
+		String limpio = nombre
+				.replaceAll("(?i)[&§]#[0-9a-f]{6}", "")
+				.replaceAll("(?i)[&§][0-9a-fk-or]", "")
+				.replaceAll("[^\\p{L}\\p{N}]", "");
+		if (limpio.isEmpty()) {
+			return "";
+		}
+		// Se llama tambien al cargar los clanes al arrancar, asi que no se asume que el
+		// plugin ya este inicializado.
+		int max = Main.plugin == null ? 4 : Main.plugin.getConfig().getInt("maxTagLength", 4);
+		if (max <= 0) {
+			max = 4;
+		}
+		return limpio.substring(0, Math.min(limpio.length(), max)).toUpperCase();
 	}
 
 	public void setTag(String tag) {

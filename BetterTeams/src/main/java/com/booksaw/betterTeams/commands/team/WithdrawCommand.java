@@ -26,7 +26,8 @@ public class WithdrawCommand extends TeamSubCommand {
 
 		double amount;
 		try {
-			amount = new BigDecimal(args[0]).doubleValue();
+			// Acepta separador decimal local y sufijo de escala: 1.000,50 y 30k.
+			amount = new BigDecimal(com.booksaw.betterTeams.luniatic.Montos.normalizar(args[0])).doubleValue();
 		} catch (Exception e) {
 			return new CommandResponse(new HelpMessage(this, label, parentCommand));
 		}

@@ -26,7 +26,7 @@ class DueloUnicosTest {
 
 	private Duelo duelo(double apuesta) {
 		return new Duelo(UUID.randomUUID(), Collections.emptySet(),
-				UUID.randomUUID(), Collections.emptySet(), apuesta, 0L);
+				UUID.randomUUID(), Collections.emptySet(), apuesta, 0L, 30 * 60_000L, 10);
 	}
 
 	@Test

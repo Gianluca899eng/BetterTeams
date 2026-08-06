@@ -384,7 +384,7 @@ public final class Menus {
 										CUERPO + "Se te van " + MARCA + "$" + monto
 												+ CUERPO + " del banco del clan.",
 										CUERPO + "Los recuperas doblados si ganan."
-								}, "team duelo " + nombre + " " + monto, () -> abrirInvitaciones(j)),
+								}, "team duelo aceptar " + nombre, () -> abrirInvitaciones(j)),
 						j -> ejecutarYVolver(j, "team duelo rechazar " + nombre,
 								() -> abrirInvitaciones(j)));
 			}
@@ -486,16 +486,62 @@ public final class Menus {
 			int monto = opciones[i];
 			inv.setItem(slots[i], boton(iconos[i], monto == 0 ? "Sin apuesta" : "$" + monto,
 					monto == 0 ? CUERPO + "Solo por el orgullo." : CUERPO + "Cada clan pone $" + monto));
-			holder.asignar(slots[i], j -> abrirConfirmacion(j, "Desafiar",
-					new String[]{
-							CUERPO + "Le mandas el desafio a " + MARCA + limpiar(nombreRival) + CUERPO + ".",
-							CUERPO + "Apuesta: " + MARCA + "$" + monto + CUERPO + " cada uno.",
-							"",
-							CUERPO + "No pasa nada hasta que ellos acepten."
-					}, "team duelo " + nombreRival + " " + monto, () -> abrirElegirApuesta(j, nombreRival)));
+			holder.asignar(slots[i], j -> abrirElegirDuracion(j, nombreRival, monto));
 		}
 
 		volverA(inv, holder, j -> abrirElegirRival(j, 0));
+		jugador.openInventory(inv);
+	}
+
+	/**
+	 * Tercer paso del desafio: cuanto dura.
+	 *
+	 * <p>Va despues del monto y antes de confirmar, y es una pantalla propia y no un
+	 * detalle de la anterior porque <b>la duracion cambia lo que es el duelo</b>: media
+	 * hora es una pelea pactada, siete dias es una guerra. Cada preset trae su objetivo
+	 * de caidas, asi que el boton muestra los dos numeros juntos.
+	 *
+	 * <p>Los dos clanes tienen que pactar la misma, igual que el monto: aceptar un duelo
+	 * de 30 minutos no puede arrancar uno de una semana.
+	 */
+	public static void abrirElegirDuracion(Player jugador, String nombreRival, int monto) {
+		Team clan = Team.getTeam(jugador);
+		DueloManager manager = Main.plugin.getDueloManager();
+		if (clan == null || manager == null || !manager.isHabilitado()) {
+			abrirPortada(jugador);
+			return;
+		}
+		MenuHolder holder = new MenuHolder();
+		Inventory inv = crear(holder, "Duracion", "contra " + limpiar(nombreRival));
+
+		inv.setItem(CABECERA, boton(Material.CLOCK, "Cuanto dura",
+				CUERPO + "Termina antes si un clan llega al",
+				CUERPO + "objetivo de caidas.",
+				"",
+				CUERPO + "El otro clan tiene que aceptar la misma",
+				CUERPO + "duracion para que arranque."));
+
+		// De menor a mayor compromiso: el color dice solo que lo de abajo es mas serio.
+		Material[] iconos = {Material.LIME_DYE, Material.YELLOW_DYE, Material.ORANGE_DYE, Material.RED_DYE};
+		List<DueloManager.Duracion> duraciones = manager.getDuraciones();
+		for (int i = 0; i < duraciones.size() && i < FILA_B.length; i++) {
+			DueloManager.Duracion duracion = duraciones.get(i);
+			inv.setItem(FILA_B[i], boton(iconos[Math.min(i, iconos.length - 1)], duracion.etiqueta,
+					CUERPO + "Objetivo: " + MARCA + duracion.bajas + CUERPO + " caidas del rival.",
+					"", ETIQUETA + "Clic para mandar el desafio"));
+			holder.asignar(FILA_B[i], j -> abrirConfirmacion(j, "Desafiar",
+					new String[]{
+							CUERPO + "Le mandas el desafio a " + MARCA + limpiar(nombreRival) + CUERPO + ".",
+							CUERPO + "Apuesta: " + MARCA + "$" + monto + CUERPO + " cada uno.",
+							CUERPO + "Dura: " + MARCA + duracion.etiqueta + CUERPO + ", a "
+									+ MARCA + duracion.bajas + CUERPO + " caidas.",
+							"",
+							CUERPO + "No pasa nada hasta que ellos acepten."
+					}, "team duelo " + nombreRival + " " + monto + " " + duracion.id,
+					() -> abrirElegirDuracion(j, nombreRival, monto)));
+		}
+
+		volverA(inv, holder, j -> abrirElegirApuesta(j, nombreRival));
 		jugador.openInventory(inv);
 	}
 
@@ -811,18 +857,9 @@ public final class Menus {
 		holder.asignar(22, Menus::abrirColores);
 
 		inv.setItem(24, boton(Material.NAME_TAG, "Nombre, etiqueta y descripcion",
-				CUERPO + "Lo unico que hay que escribir a mano,",
-				CUERPO + "porque es texto libre:",
-				"",
-				ETIQUETA + "/team name <nombre>",
-				ETIQUETA + "/team tag <etiqueta>",
-				ETIQUETA + "/team description <texto>"));
-		holder.asignar(24, j -> {
-			j.closeInventory();
-			mensaje(j, "Nombre: " + ETIQUETA + "/team name <nombre>");
-			mensaje(j, "Etiqueta: " + ETIQUETA + "/team tag <etiqueta>");
-			mensaje(j, "Descripcion: " + ETIQUETA + "/team description <texto>");
-		});
+				CUERPO + "Como se llama el clan y con que",
+				CUERPO + "etiqueta aparece en el chat."));
+		holder.asignar(24, Menus::abrirIdentidad);
 
 		inv.setItem(29, boton(Material.PAPER, "Chat del clan",
 				CUERPO + "Prende o apaga el chat interno."));
@@ -847,6 +884,87 @@ public final class Menus {
 		holder.asignar(SLOT_VOLVER, Menus::abrirPortada);
 		cerrar(inv, holder);
 		jugador.openInventory(inv);
+	}
+
+	// ---------------------------------------------------------------- identidad
+
+	/**
+	 * Nombre, etiqueta y descripcion: lo unico del clan que es texto libre.
+	 *
+	 * <p>Antes esta pantalla se limitaba a dictar los tres comandos. Ahora los pide por
+	 * chat y vuelve sola, que es la regla de la casa: se elige, y lo unico que se
+	 * escribe es lo que no se puede ofrecer como opcion.
+	 *
+	 * <p>La <b>etiqueta</b> es lo unico del clan que entra al chat, y por eso esta
+	 * acotada a {@code maxTagLength}: el nombre completo va al tab y al nombre flotante,
+	 * donde sobra lugar. Un clan nuevo ya nace con una derivada del nombre, asi que esto
+	 * es para cambiarla, no para ponerla.
+	 */
+	public static void abrirIdentidad(Player jugador) {
+		Team clan = Team.getTeam(jugador);
+		if (clan == null) {
+			abrirPortada(jugador);
+			return;
+		}
+		MenuHolder holder = new MenuHolder();
+		Inventory inv = crear(holder, "Identidad", limpiar(clan.getName()));
+
+		int max = Main.plugin.getConfig().getInt("maxTagLength", 4);
+
+		inv.setItem(FILA_A[1], boton(Material.NAME_TAG, "Nombre",
+				CUERPO + "Ahora: " + MARCA + limpiar(clan.getName()),
+				CUERPO + "Se ve en el tab y sobre la cabeza.",
+				"", ETIQUETA + "Clic para cambiarlo"));
+		holder.asignar(FILA_A[1], j -> pedirTexto(j,
+				"Escribi el nombre nuevo del clan.", "team name", true));
+
+		inv.setItem(FILA_A[3], boton(Material.OAK_SIGN, "Etiqueta",
+				CUERPO + "Ahora: " + MARCA + etiquetaActual(clan),
+				CUERPO + "Es lo que sale en el chat, hasta " + MARCA + max + CUERPO + " letras.",
+				"", ETIQUETA + "Clic para cambiarla"));
+		holder.asignar(FILA_A[3], j -> pedirTexto(j,
+				"Escribi la etiqueta nueva, hasta " + max + " caracteres.", "team tag", true));
+
+		inv.setItem(FILA_A[5], boton(Material.BOOK, "Descripcion",
+				CUERPO + "Ahora: " + MARCA + descripcionActual(clan),
+				"", ETIQUETA + "Clic para cambiarla"));
+		holder.asignar(FILA_A[5], j -> pedirTexto(j,
+				"Escribi la descripcion del clan.", "team description", false));
+
+		inv.setItem(SLOT_VOLVER, boton(Material.ARROW, "Volver"));
+		holder.asignar(SLOT_VOLVER, Menus::abrirAjustes);
+		cerrar(inv, holder);
+		jugador.openInventory(inv);
+	}
+
+	/**
+	 * Pide el texto por chat, ejecuta el comando y vuelve a la misma pantalla.
+	 *
+	 * <p>Con {@code unaPalabra} los espacios pasan a guion bajo: {@code /team name} y
+	 * {@code /team tag} toman un solo argumento y si no se quedarian con la primera
+	 * palabra sin avisar. La descripcion si acepta varias.
+	 */
+	private static void pedirTexto(Player jugador, String consigna, String comando, boolean unaPalabra) {
+		EsperaTexto.pedir(jugador, consigna,
+				texto -> {
+					jugador.performCommand(comando + " " + (unaPalabra ? texto.replace(' ', '_') : texto));
+					abrirIdentidad(jugador);
+				},
+				Menus::abrirIdentidad);
+	}
+
+	private static String etiquetaActual(Team clan) {
+		String tag = clan.getOriginalTag();
+		return tag == null || tag.isEmpty() ? "sin etiqueta" : limpiar(tag);
+	}
+
+	private static String descripcionActual(Team clan) {
+		String desc = clan.getDescription();
+		if (desc == null || desc.isEmpty()) {
+			return "sin descripcion";
+		}
+		String limpio = limpiar(desc);
+		return limpio.length() > 30 ? limpio.substring(0, 30) + "..." : limpio;
 	}
 
 	// --------------------------------------------------- acciones sobre un miembro

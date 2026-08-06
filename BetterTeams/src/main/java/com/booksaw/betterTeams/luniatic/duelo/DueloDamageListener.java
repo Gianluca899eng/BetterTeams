@@ -12,13 +12,21 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.projectiles.ProjectileSource;
 
 /**
- * Hace valer el duelo por encima del toggle individual de PvP.
+ * Hace que el duelo alcance a los rivales y a nadie mas.
  *
- * <p>Solo corre si <code>duelo.pisa-pvp-individual</code> esta encendido. Lo que
- * hace es destapar un dano que otro plugin cancelo, y eso tiene una consecuencia
- * que hay que entender antes de encenderlo: el consentimiento lo da el duenio del
- * clan, asi que un miembro con el PvP apagado queda alcanzado por una decision que
- * no tomo el.
+ * <p><b>Hace una sola cosa: deja pasar un dano que otro plugin cancelo, y solo entre
+ * los dos bandos del duelo.</b> Requiere <code>duelo.pisa-pvp-individual</code>.
+ *
+ * <p>🔑 <b>El duelo NO toca el toggle de PvP del jugador, y por eso alcanza con esto.</b>
+ * Antes se lo prendia a la fuerza para que el scoreboard no mintiera, y como el toggle de
+ * PvPManager es global —no sabe contra quien esta prendido— hacia falta una segunda mitad
+ * que volviera a tapar el dano de los terceros. Ahora el toggle queda como el jugador lo
+ * dejo, el cartel lo explica aparte, y toda esa maquinaria sobra.
+ *
+ * <p>La consecuencia que hay que entender antes de encender el override sigue en pie:
+ * el consentimiento lo da el duenio del clan, asi que un miembro con el PvP apagado
+ * queda alcanzado por una decision que no tomo el. Lo que esto acota es a quienes:
+ * al rival pactado, no al servidor entero.
  *
  * <p>Nunca destapa dano dentro de una region donde WorldGuard prohibe PvP: sin esa
  * guarda, esto tambien romperia la zona segura del spawn.
@@ -49,7 +57,7 @@ public class DueloDamageListener implements Listener {
 		// El orden importa: este listener corre en CADA evento de dano del servidor,
 		// mobs y granjas incluidos. Primero los chequeos que son una comparacion, y
 		// recien al final resolver el clan, que recorre todos los clanes.
-		if (!evento.isCancelled() || !manager.hayDuelos() || !manager.isPisaPvpIndividual()) {
+		if (!manager.hayDuelos()) {
 			return;
 		}
 		if (!(evento.getEntity() instanceof Player)) {
@@ -61,6 +69,20 @@ public class DueloDamageListener implements Listener {
 			return;
 		}
 
+		// Solo se destapa. Ya no hace falta la mitad que volvia a tapar: existia para
+		// deshacer el forzado del toggle de PvPManager, y el duelo dejo de tocarlo.
+		if (evento.isCancelled()) {
+			destapar(evento, victima, atacante);
+		}
+	}
+
+	/**
+	 * Deja pasar un dano que otro plugin cancelo, solo entre los dos bandos del duelo.
+	 */
+	private void destapar(EntityDamageByEntityEvent evento, Player victima, Player atacante) {
+		if (!manager.isPisaPvpIndividual()) {
+			return;
+		}
 		Team clanVictima = Team.getTeam(victima);
 		Team clanAtacante = Team.getTeam(atacante);
 		if (!manager.sonRivales(clanVictima, clanAtacante)) {

@@ -65,8 +65,11 @@ public class DueloBossBar implements Listener {
 		Team rival = Team.getTeam(duelo.rivalDe(clan.getID()));
 		int propias = duelo.getBajas(clan.getID());
 		int ajenas = rival == null ? 0 : duelo.getBajas(rival.getID());
-		long minutos = duelo.segundosRestantes(System.currentTimeMillis()) / 60;
-		long duracionMillis = manager.getDuracionMillis();
+		long segundos = duelo.segundosRestantes(System.currentTimeMillis());
+		// La duracion sale del duelo y no del manager: cada duelo pacta la suya, y con
+		// la del manager la barra mediria contra el preset mas corto y se vaciaria de
+		// entrada en un duelo de dias.
+		long duracionMillis = duelo.getDuracionMillis();
 		String nombreRival = rival == null ? "?" : Texto.limpiar(rival.getName());
 
 		// Corto a proposito: la barra se lee de reojo en medio de una pelea. El
@@ -85,7 +88,7 @@ public class DueloBossBar implements Listener {
 
 		String titulo = Texto.col(encabezado
 				+ SEPARADOR + MARCA + propias + CUERPO + "-" + MARCA + ajenas
-				+ SEPARADOR + MARCA + minutos + CUERPO + "m");
+				+ SEPARADOR + restante(segundos));
 
 		// La barra es el reloj: arranca llena y se vacia. Antes se llenaba con las
 		// caidas propias, y una barra que crece se lee como progreso hacia algo
@@ -154,5 +157,25 @@ public class DueloBossBar implements Listener {
 	@EventHandler(priority = EventPriority.MONITOR)
 	public void alSalir(PlayerQuitEvent evento) {
 		quitar(evento.getPlayer());
+	}
+
+	/**
+	 * Lo que falta, en la unidad que se entiende de un vistazo.
+	 *
+	 * <p>Con duelos de dias, "10079m" no informa nada. Se muestran dias mientras
+	 * queden mas de 24 horas, horas mientras quede mas de una, y recien ahi minutos.
+	 */
+	private static String restante(long segundos) {
+		if (segundos < 0) {
+			segundos = 0;
+		}
+		long minutos = segundos / 60;
+		if (minutos >= 1440) {
+			return MARCA + (minutos / 1440) + CUERPO + "d";
+		}
+		if (minutos >= 60) {
+			return MARCA + (minutos / 60) + CUERPO + "h";
+		}
+		return MARCA + minutos + CUERPO + "m";
 	}
 }

@@ -26,12 +26,11 @@ import com.booksaw.betterTeams.events.*;
 import com.booksaw.betterTeams.events.MCTeamManagement.BelowNameType;
 import com.booksaw.betterTeams.extension.ExtensionManager;
 import com.booksaw.betterTeams.luniatic.duelo.DueloCommand;
+import com.booksaw.betterTeams.luniatic.duelo.DueloComandoListener;
 import com.booksaw.betterTeams.luniatic.duelo.DueloDamageListener;
 import com.booksaw.betterTeams.luniatic.duelo.DueloBossBar;
 import com.booksaw.betterTeams.luniatic.duelo.DueloDeathListener;
 import com.booksaw.betterTeams.luniatic.duelo.DueloPlaceholders;
-import com.booksaw.betterTeams.luniatic.duelo.DueloToggleListener;
-import com.booksaw.betterTeams.luniatic.duelo.PuenteEstadoPvp;
 import com.booksaw.betterTeams.luniatic.duelo.DueloManager;
 import com.booksaw.betterTeams.luniatic.gui.MenuCommand;
 import com.booksaw.betterTeams.luniatic.gui.MenuListener;
@@ -208,9 +207,10 @@ public class Main extends JavaPlugin {
 	@Override
 	public void onDisable() {
 
-		// Antes que nada: los duelos en curso tienen dinero retenido y hay que devolverlo.
+		// Los duelos en curso se guardan y siguen despues del reinicio: duran dias, y un
+		// reinicio no termina un duelo. El pozo queda retenido igual que el duelo.
 		if (dueloManager != null) {
-			dueloManager.devolverTodo();
+			dueloManager.guardarYSoltar();
 		}
 
 		if (extensionManager != null) {
@@ -491,11 +491,15 @@ public class Main extends JavaPlugin {
 			foliaLib.getScheduler().runTimer(task -> dueloManager.revisar(), 200L, 200L);
 			getServer().getPluginManager().registerEvents(new DueloDeathListener(dueloManager), this);
 			if (dueloManager.isPisaPvpIndividual()) {
-				dueloManager.setPuentePvp(new PuenteEstadoPvp());
+				// Solo el listener de dano. El duelo ya no prende ni bloquea el toggle de
+				// PvPManager: destapar el dano entre rivales alcanza, y el /pvp del
+				// jugador queda diciendo la verdad sobre lo que el eligio.
 				getServer().getPluginManager().registerEvents(new DueloDamageListener(dueloManager), this);
-				// Cortar el toggle ataca el problema un paso antes que destapar el
-				// dano: sin esto, /pvp vuelve decorativo al duelo.
-				getServer().getPluginManager().registerEvents(new DueloToggleListener(dueloManager), this);
+			}
+			if (dueloManager.hayComandosBloqueados()) {
+				// Corta /dback y /back en duelo. Al morir se pierde el tag de combate de
+				// PvPManager, asi que sin esto se vuelve al punto de la pelea al instante.
+				getServer().getPluginManager().registerEvents(new DueloComandoListener(dueloManager), this);
 			}
 			if (dueloManager.isBarraActiva()) {
 				DueloBossBar barra = new DueloBossBar(dueloManager);
@@ -505,11 +509,18 @@ public class Main extends JavaPlugin {
 			if (placeholderAPI) {
 				new DueloPlaceholders(dueloManager).register();
 			}
+			// Ultimo, con la barra ya puesta: los duelos que sobrevivieron al reinicio
+			// tienen que volver con su barra dibujada, no aparecer recien en la primera
+			// pelea.
+			dueloManager.cargar();
 			getLogger().info("Duelos pactados: activos"
 					+ (dueloManager.isPisaPvpIndividual() ? ", con override de PvP." : "."));
 		}
 
 		getServer().getPluginManager().registerEvents(new MenuListener(), this);
+		// Respuestas por chat cuando el menu pide un texto: nombre, etiqueta, descripcion.
+		getServer().getPluginManager().registerEvents(
+				new com.booksaw.betterTeams.luniatic.gui.EsperaTexto(), this);
 
 		getServer().getPluginManager().registerEvents((chatManagement = new ChatManagement()), this);
 		getServer().getPluginManager().registerEvents(new ScoreManagement(), this);

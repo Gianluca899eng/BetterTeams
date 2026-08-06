@@ -7,6 +7,9 @@ import com.booksaw.betterTeams.TeamPlayer;
 import com.booksaw.betterTeams.message.MessageManager;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
+import net.kyori.adventure.platform.bukkit.BukkitAudiences;
+import net.kyori.adventure.text.Component;
+import com.booksaw.betterTeams.text.Formatter;
 import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
@@ -50,15 +53,10 @@ public class DueloManager {
 	private final boolean arrastraAliados;
 	private final boolean debug;
 	private final boolean pisaClaims;
+	private final Set<String> comandosBloqueados;
 	private DueloBossBar barra;
 	private GuardiaRegion guardia;
-	private PuenteEstadoPvp puentePvp;
-	/** A quienes les prendimos el PvP nosotros, para devolverselo al terminar. */
-	private final Set<UUID> prendidosPorNosotros = new java.util.HashSet<>();
 
-	public void setPuentePvp(PuenteEstadoPvp puentePvp) {
-		this.puentePvp = puentePvp;
-	}
 
 	/**
 	 * Desafios sin aceptar: clan retado -> (clan retador -> desafio).
@@ -70,9 +68,87 @@ public class DueloManager {
 	/** Duelos en curso, indexados por CADA participante (dos entradas por duelo). */
 	private final Map<UUID, Duelo> enCurso = new HashMap<>();
 
+	/**
+	 * Una duracion que se puede pactar, con el objetivo de caidas que le corresponde.
+	 *
+	 * <p>El objetivo va atado a la duracion y no suelto: con un objetivo fijo, un duelo
+	 * de siete dias se resolveria en la primera escaramuza y elegir la duracion no
+	 * significaria nada.
+	 */
+	public static final class Duracion {
+		public final String id;
+		public final String etiqueta;
+		public final long millis;
+		public final int bajas;
+
+		Duracion(String id, String etiqueta, long millis, int bajas) {
+			this.id = id;
+			this.etiqueta = etiqueta;
+			this.millis = millis;
+			this.bajas = bajas;
+		}
+	}
+
+	/** Presets pactables. Nunca vacia: si la config no trae ninguno, se arma uno. */
+	private final List<Duracion> duraciones;
+
+	/**
+	 * Lee los presets, con respaldo a las claves viejas.
+	 *
+	 * <p>Un servidor que venga de la version anterior tiene {@code duracion-minutos} y
+	 * {@code objetivo-bajas} sueltos y ninguna lista: en vez de dejarlo sin duelos, se
+	 * arma un unico preset con esos valores.
+	 */
+	private static List<Duracion> leerDuraciones(ConfigurationSection seccion) {
+		List<Duracion> lista = new ArrayList<>();
+		List<Map<?, ?>> crudas = seccion.getMapList("duraciones");
+		for (Map<?, ?> cruda : crudas) {
+			Object id = cruda.get("id");
+			Object minutos = cruda.get("minutos");
+			if (id == null || !(minutos instanceof Number)) {
+				continue;
+			}
+			long millis = Math.max(1, ((Number) minutos).longValue()) * 60_000L;
+			int bajas = cruda.get("bajas") instanceof Number
+					? Math.max(1, ((Number) cruda.get("bajas")).intValue()) : 10;
+			Object etiqueta = cruda.get("etiqueta");
+			lista.add(new Duracion(id.toString(),
+					etiqueta == null ? id.toString() : etiqueta.toString(), millis, bajas));
+		}
+		if (lista.isEmpty()) {
+			long millis = Math.max(1, seccion.getInt("duracion-minutos", 30)) * 60_000L;
+			int bajas = Math.max(1, seccion.getInt("objetivo-bajas", 10));
+			lista.add(new Duracion("default", (millis / 60_000L) + " minutos", millis, bajas));
+		}
+		return lista;
+	}
+
+	public List<Duracion> getDuraciones() {
+		return duraciones;
+	}
+
+	/** El preset por defecto es el primero de la lista: el mas corto. */
+	public Duracion duracionPorDefecto() {
+		return duraciones.get(0);
+	}
+
+	/** Null si no existe ese id, para que el comando responda el error que corresponda. */
+	public Duracion duracionPorId(String id) {
+		if (id == null) {
+			return null;
+		}
+		for (Duracion duracion : duraciones) {
+			if (duracion.id.equalsIgnoreCase(id)) {
+				return duracion;
+			}
+		}
+		return null;
+	}
+
 	public DueloManager(ConfigurationSection seccion) {
 		if (seccion == null) {
 			habilitado = false;
+			duraciones = java.util.Collections.singletonList(new Duracion("default", "30 minutos", 30 * 60_000L, 10));
 			duracionMillis = 0;
 			esperaMillis = 0;
 			apuestaMinima = 0;
@@ -85,10 +161,12 @@ public class DueloManager {
 			arrastraAliados = false;
 			debug = false;
 			pisaClaims = false;
+			comandosBloqueados = java.util.Collections.emptySet();
 			return;
 		}
 		habilitado = seccion.getBoolean("enabled", false);
-		duracionMillis = Math.max(1, seccion.getInt("duracion-minutos", 30)) * 60_000L;
+		duraciones = leerDuraciones(seccion);
+		duracionMillis = duraciones.get(0).millis;
 		esperaMillis = Math.max(10, seccion.getInt("espera-aceptacion-segundos", 120)) * 1000L;
 		apuestaMinima = Math.max(0, seccion.getDouble("apuesta.minima", 0));
 		apuestaMaxima = Math.max(apuestaMinima, seccion.getDouble("apuesta.maxima", 100000));
@@ -100,6 +178,47 @@ public class DueloManager {
 		arrastraAliados = seccion.getBoolean("arrastra-aliados", true);
 		debug = seccion.getBoolean("debug", false);
 		pisaClaims = seccion.getBoolean("pisa-claims", true);
+		comandosBloqueados = leerComandosBloqueados(seccion);
+	}
+
+	/**
+	 * Comandos que no se pueden usar mientras el clan esta en duelo.
+	 *
+	 * <p>Se guardan en minusculas y sin la barra para poder comparar de una.
+	 */
+	private static Set<String> leerComandosBloqueados(ConfigurationSection seccion) {
+		List<String> crudos = seccion.getStringList("comandos-bloqueados");
+		if (crudos.isEmpty()) {
+			crudos = java.util.Arrays.asList("dback", "back");
+		}
+		Set<String> limpios = new java.util.HashSet<>();
+		for (String crudo : crudos) {
+			if (crudo == null) {
+				continue;
+			}
+			String limpio = crudo.trim().toLowerCase(Locale.ROOT);
+			if (limpio.startsWith("/")) {
+				limpio = limpio.substring(1);
+			}
+			if (!limpio.isEmpty()) {
+				limpios.add(limpio);
+			}
+		}
+		return limpios;
+	}
+
+	/** Si hay al menos un comando que bloquear. Evita registrar el listener al pedo. */
+	public boolean hayComandosBloqueados() {
+		return !comandosBloqueados.isEmpty();
+	}
+
+	/**
+	 * Si ese comando esta bloqueado para quien esta en duelo.
+	 *
+	 * @param comando nombre ya normalizado: minusculas, sin barra y sin namespace.
+	 */
+	public boolean esComandoBloqueado(String comando) {
+		return comandosBloqueados.contains(comando);
 	}
 
 	/**
@@ -139,7 +258,10 @@ public class DueloManager {
 	 * ya dieron, o sea casi nunca.
 	 */
 	public boolean pvpForzadoAca(Player jugador) {
-		if (!habilitado || !pisaPvpIndividual || jugador == null) {
+		// hayDuelos() primero: esto lo pide el scoreboard una vez por segundo y por
+		// jugador conectado, y resolver el clan recorre todos los clanes. Sin duelos en
+		// curso —o sea casi siempre— tiene que costar una comparacion.
+		if (!habilitado || !pisaPvpIndividual || jugador == null || !hayDuelos()) {
 			return false;
 		}
 		Duelo duelo = getDuelo(Team.getTeam(jugador));
@@ -197,65 +319,6 @@ public class DueloManager {
 		}
 	}
 
-	/**
-	 * Le prende el PvP a todos los que entran al duelo.
-	 *
-	 * <p>Sin esto, el que ya lo tenia apagado cuando empezo el duelo quedaba
-	 * atrapado: el bloqueo del toggle no lo deja apagarlo —ya estaba apagado— y el
-	 * scoreboard le mostraba OFF mientras el duelo corria. Ahora el duelo lo prende
-	 * y el bloqueo lo mantiene asi hasta que termine.
-	 *
-	 * <p>Se hace por el comando de PvPManager desde consola, no por su API: no hace
-	 * falta compilar contra ese plugin, y si mañana se cambia por otro alcanza con
-	 * cambiar esta linea. Es idempotente: prender lo que ya esta prendido no hace
-	 * nada.
-	 *
-	 * <p>⚠️ <b>No se restaura al terminar.</b> Quedan con el PvP prendido y lo
-	 * apagan cuando quieran, que para entonces ya esta permitido.
-	 */
-	private void prenderPvp(Duelo duelo) {
-		if (!pisaPvpIndividual || puentePvp == null) {
-			return;
-		}
-		for (UUID id : duelo.todosLosClanes()) {
-			Team clan = Team.getTeam(id);
-			if (clan == null) {
-				continue;
-			}
-			for (Player jugador : clan.getMembers().getOnlinePlayers()) {
-				// Se anota a quien se lo prendimos NOSOTROS, para devolverselo al
-				// final. Al que ya lo tenia prendido no se lo tocamos ni al terminar.
-				if (!puentePvp.tienePvp(jugador)) {
-					prendidosPorNosotros.add(jugador.getUniqueId());
-					puentePvp.prender(jugador);
-				}
-			}
-		}
-	}
-
-	/**
-	 * Devuelve el PvP como estaba a quien se lo prendimos nosotros.
-	 *
-	 * <p>El duelo prende el PvP a la fuerza; dejarlo prendido al final seria
-	 * cambiarle al jugador una preferencia que el no toco. Solo se apaga a los que
-	 * lo tenian apagado antes de empezar: al que ya peleaba no se le toca nada.
-	 */
-	private void devolverPvp(Duelo duelo) {
-		if (puentePvp == null) {
-			return;
-		}
-		for (UUID id : duelo.todosLosClanes()) {
-			Team clan = Team.getTeam(id);
-			if (clan == null) {
-				continue;
-			}
-			for (Player jugador : clan.getMembers().getOnlinePlayers()) {
-				if (prendidosPorNosotros.remove(jugador.getUniqueId())) {
-					puentePvp.apagar(jugador);
-				}
-			}
-		}
-	}
 
 	/** Redibuja a los dos bandos enteros, aliados incluidos. */
 	private void dibujarTodos(Duelo duelo) {
@@ -303,6 +366,32 @@ public class DueloManager {
 	}
 
 	/** Rechaza un desafio. El que lo mando se entera. */
+	/**
+	 * Acepta el desafio que mando ese clan, con las condiciones que el puso.
+	 *
+	 * <p>Existe porque la otra forma de aceptar —repetir el comando de desafio con el
+	 * mismo monto— es innecesariamente dificil: el desafio ya dice cuanto y cuanto dura,
+	 * y hacerselo escribir de nuevo es friccion, no consentimiento. El consentimiento es
+	 * el acto de aceptar.
+	 *
+	 * <p>Es el simetrico de {@link #rechazar(Team, Team)}, y comparte su error cuando no
+	 * hay nada que aceptar.
+	 */
+	public Resultado aceptar(Team retado, Team retador) {
+		Map<UUID, Desafio> recibidos = desafios.get(retado.getID());
+		Desafio desafio = recibidos == null ? null : recibidos.get(retador.getID());
+		if (desafio == null || desafio.vencio(System.currentTimeMillis())) {
+			if (recibidos != null) {
+				recibidos.remove(retador.getID());
+			}
+			return Resultado.error("duelo.sin_desafio");
+		}
+		// Se delega en desafiar para no tener dos caminos que arranquen un duelo: ahi
+		// estan los chequeos de fondos, de clanes ocupados y el consumo del desafio.
+		// duracion null = "la que pacto el otro".
+		return desafiar(retado, retador, desafio.getApuesta(), null);
+	}
+
 	public Resultado rechazar(Team retado, Team retador) {
 		Map<UUID, Desafio> recibidos = desafios.get(retado.getID());
 		if (recibidos == null || recibidos.remove(retador.getID()) == null) {
@@ -332,9 +421,17 @@ public class DueloManager {
 	 * Es el mismo flujo que usan las alianzas.
 	 */
 	public Resultado desafiar(Team retador, Team retado, double apuesta) {
+		return desafiar(retador, retado, apuesta, null);
+	}
+
+	public Resultado desafiar(Team retador, Team retado, double apuesta, Duracion duracion) {
 		if (!habilitado) {
 			return Resultado.error("duelo.apagado");
 		}
+		// duracion == null significa "no elegi ninguna", y NO es lo mismo que elegir la
+		// por defecto: si esto es una aceptacion, hay que tomar la que pacto el otro.
+		// Resolverlo aca arriba rompia aceptar cualquier duelo que no fuera del preset
+		// corto, porque ni el mensaje ni el menu le piden la duracion al que acepta.
 		if (retador.getID().equals(retado.getID())) {
 			return Resultado.error("duelo.uno_mismo");
 		}
@@ -364,15 +461,31 @@ public class DueloManager {
 				// Los dos tienen que estar de acuerdo con lo que se juega.
 				return Resultado.error("duelo.monto_distinto", fmt(recibido.getApuesta()));
 			}
+			// La duracion la puso el que desafio: aceptar es aceptar SUS condiciones.
+			// Solo se avisa si el que acepta pidio explicitamente otra distinta.
+			Duracion pactada = duracionPorId(recibido.getDuracionId());
+			if (pactada == null) {
+				pactada = duracionPorDefecto();
+			}
+			if (duracion != null && !pactada.id.equalsIgnoreCase(duracion.id)) {
+				return Resultado.error("duelo.duracion_distinta", pactada.etiqueta);
+			}
+			duracion = pactada;
 			// 🔑 El desafio se consume SOLO si el duelo arranco. Antes se borraba
 			// antes de intentar, asi que aceptar sin plata en el banco te dejaba sin
 			// invitacion y sin duelo: habia que pedirle al otro que la mandara de
 			// nuevo por un error que no cambiaba nada del acuerdo.
-			Resultado resultado = arrancar(retado, retador, apuesta);
+			Resultado resultado = arrancar(retado, retador, apuesta, duracion);
 			if (resultado.exito) {
 				misRecibidos.remove(retado.getID());
 			}
 			return resultado;
+		}
+
+		// Desde aca es un desafio nuevo: sin eleccion va el preset mas corto, para que
+		// mandar una semana de guerra sea siempre una decision y nunca lo que pasa solo.
+		if (duracion == null) {
+			duracion = duracionPorDefecto();
 		}
 
 		Map<UUID, Desafio> susRecibidos = desafios.computeIfAbsent(retado.getID(), id -> new HashMap<>());
@@ -384,15 +497,17 @@ public class DueloManager {
 		}
 
 		susRecibidos.put(retador.getID(),
-				new Desafio(retador.getID(), apuesta, System.currentTimeMillis() + esperaMillis));
-		avisar(retado, "duelo.recibido", retador.getName(), fmt(apuesta));
+				new Desafio(retador.getID(), apuesta, duracion.id, System.currentTimeMillis() + esperaMillis));
+		avisar(retado, "duelo.recibido", retador.getName(), fmt(apuesta), duracion.etiqueta);
 		// Y en pantalla al mando, que es el unico que puede responderlo: un mensaje
 		// de chat se pierde entre lo demas y el desafio se queda esperando.
 		avisarEnPantallaAlMando(retado, "duelo.recibido_titulo", retador.getName(), fmt(apuesta));
+		// Y los botones, que es la via rapida para el que si puede responder.
+		botonesDeRespuesta(retado, retador);
 		return Resultado.ok("duelo.enviado", retado.getName(), fmt(apuesta));
 	}
 
-	private Resultado arrancar(Team unClan, Team otroClan, double apuesta) {
+	private Resultado arrancar(Team unClan, Team otroClan, double apuesta, Duracion duracion) {
 		if (apuesta > 0) {
 			if (unClan.getMoney() < apuesta) {
 				return Resultado.error("duelo.rival_sin_fondos", unClan.getName());
@@ -409,14 +524,17 @@ public class DueloManager {
 		// refuerzos, y desaliarse no saca a nadie del lio en el que ya estaba.
 		Duelo duelo = new Duelo(unClan.getID(), aliadosLibres(unClan),
 				otroClan.getID(), aliadosLibres(otroClan),
-				apuesta, System.currentTimeMillis() + duracionMillis);
+				apuesta, System.currentTimeMillis() + duracion.millis,
+				duracion.millis, duracion.bajas);
 		for (UUID id : duelo.todosLosClanes()) {
 			enCurso.put(id, duelo);
 		}
+		guardar();
 
-		long minutos = duracionMillis / 60_000L;
-		avisar(unClan, "duelo.arranco", otroClan.getName(), fmt(duelo.getPozo()), String.valueOf(minutos));
-		avisar(otroClan, "duelo.arranco", unClan.getName(), fmt(duelo.getPozo()), String.valueOf(minutos));
+		// El aviso dice la etiqueta del preset ("7 dias"), no los minutos: 10080 no le
+		// dice nada a nadie.
+		avisar(unClan, "duelo.arranco", otroClan.getName(), fmt(duelo.getPozo()), duracion.etiqueta);
+		avisar(otroClan, "duelo.arranco", unClan.getName(), fmt(duelo.getPozo()), duracion.etiqueta);
 
 		// Al aliado hay que decirle que quedo adentro y por que: el no acepto nada.
 		for (UUID id : duelo.todosLosClanes()) {
@@ -430,7 +548,7 @@ public class DueloManager {
 				avisar(aliado, "duelo.arrastrado",
 						suPrincipal == null ? "?" : suPrincipal.getName(),
 						suRival == null ? "?" : suRival.getName(),
-						String.valueOf(minutos));
+						duracion.etiqueta);
 			}
 		}
 
@@ -440,7 +558,6 @@ public class DueloManager {
 		}
 
 		dibujarTodos(duelo);
-		prenderPvp(duelo);
 		return Resultado.ok("duelo.arranco_confirmacion", unClan.getName());
 	}
 
@@ -494,9 +611,10 @@ public class DueloManager {
 		}
 
 		int bajas = duelo.sumarBaja(clanCaido.getID());
+		guardar();
 		Team principalRival = Team.getTeam(duelo.rivalDe(clanCaido.getID()));
 
-		if (bajas >= objetivoBajas) {
+		if (bajas >= duelo.getObjetivoBajas()) {
 			cerrar(duelo);
 			if (principalRival != null) {
 				pagar(principalRival, duelo.getPozo());
@@ -507,7 +625,7 @@ public class DueloManager {
 			return;
 		}
 
-		String marcador = bajas + "/" + objetivoBajas;
+		String marcador = bajas + "/" + duelo.getObjetivoBajas();
 		// El marcador lo ven los dos bandos enteros, aliados incluidos: estan peleando.
 		for (UUID id : duelo.getBando(clanCaido.getID())) {
 			Team clan = Team.getTeam(id);
@@ -580,6 +698,14 @@ public class DueloManager {
 	}
 
 	/** Se llama al apagar el plugin: nadie se queda sin su parte del pozo. */
+	/**
+	 * Cancela todos los duelos y devuelve el pozo.
+	 *
+	 * <p>Ya <b>no</b> se llama al apagar el servidor —para eso esta
+	 * {@link #guardarYSoltar()}— sino cuando de verdad hay que abandonar los duelos en
+	 * curso: apagar la funcion, o sacarla del plugin. Cancelar un duelo de tres dias
+	 * porque el servidor se reinicio seria peor que no tener duelos largos.
+	 */
 	public void devolverTodo() {
 		for (Duelo duelo : unicos(enCurso.values())) {
 			cerrar(duelo);
@@ -589,6 +715,7 @@ public class DueloManager {
 		if (barra != null) {
 			barra.quitarTodas();
 		}
+		guardar();
 	}
 
 	/**
@@ -644,10 +771,73 @@ public class DueloManager {
 	 * apagado del servidor— se olvida de sacar la barra ni de devolver el PvP.
 	 */
 	private void cerrar(Duelo duelo) {
-		devolverPvp(duelo);
 		for (UUID id : duelo.todosLosClanes()) {
 			enCurso.remove(id);
 			borrarBarra(Team.getTeam(id));
+		}
+		guardar();
+	}
+
+	/**
+	 * Baja los duelos en curso a disco.
+	 *
+	 * <p>Se llama cuando cambian —empezar, sumar una baja, cerrar, apagar— y nunca por
+	 * tick. Son unos pocos duelos y un archivo chico.
+	 */
+	private void guardar() {
+		DuelosGuardados.guardar(unicos(enCurso.values()));
+	}
+
+	/**
+	 * Levanta los duelos que quedaron de la sesion anterior.
+	 *
+	 * <p><b>Es lo que hace posible que un duelo dure dias.</b> Sin esto, cualquier
+	 * reinicio caia en el medio y el duelo se cancelaba solo, devolviendo el pozo y
+	 * borrando el marcador.
+	 *
+	 * <p>Se llama despues de que los clanes esten cargados, porque hace falta resolver
+	 * los dos principales: un clan borrado con el servidor apagado deja un duelo sin
+	 * rival, y ese se descarta en vez de quedar colgado.
+	 *
+	 * <p>Los que vencieron mientras el servidor estaba apagado no se resuelven aca: los
+	 * cierra {@link #revisar()} en su primera pasada, que corre a los 10 segundos. Asi
+	 * hay un solo lugar que decide como termina un duelo.
+	 */
+	public void cargar() {
+		if (!habilitado) {
+			return;
+		}
+		int levantados = 0;
+		for (Duelo duelo : DuelosGuardados.cargar()) {
+			if (Team.getTeam(duelo.getClanA()) == null || Team.getTeam(duelo.getClanB()) == null) {
+				Main.plugin.getLogger().warning("[duelo] se descarta un duelo guardado: falta uno de los clanes");
+				continue;
+			}
+			for (UUID id : duelo.todosLosClanes()) {
+				enCurso.put(id, duelo);
+			}
+			dibujarTodos(duelo);
+			levantados++;
+		}
+		if (levantados > 0) {
+			Main.plugin.getLogger().info("[duelo] se levantaron " + levantados + " duelo(s) en curso");
+			// El archivo se reescribe con lo que quedo: si alguno se descarto, no tiene
+			// sentido que siga en disco esperando el proximo arranque.
+			guardar();
+		}
+	}
+
+	/**
+	 * Al apagar: guarda y suelta las barras, <b>sin devolver el pozo</b>.
+	 *
+	 * <p>Es lo contrario de {@link #devolverTodo()}, y la diferencia es a proposito: un
+	 * reinicio no termina un duelo de tres dias, asi que el pozo tiene que seguir
+	 * retenido igual que el duelo.
+	 */
+	public void guardarYSoltar() {
+		guardar();
+		if (barra != null) {
+			barra.quitarTodas();
 		}
 	}
 
@@ -674,6 +864,49 @@ public class DueloManager {
 	 * Tirarselo en la cara a todo el clan seria ruido para gente que no puede hacer
 	 * nada al respecto.
 	 */
+	/**
+	 * Los dos botones para responder el desafio, clickeables en el chat.
+	 *
+	 * <p>Van <b>solo al mando</b>: aceptar y rechazar piden rango de duenio o colider,
+	 * asi que ofrecerselo a un miembro comun seria un boton que falla.
+	 *
+	 * <p>⚠️ <b>El clic no llega a Bedrock por Geyser.</b> Por eso el mensaje de texto
+	 * sigue diciendo el comando entero: los botones son un atajo, no la unica via.
+	 */
+	private void botonesDeRespuesta(Team retado, Team retador) {
+		BukkitAudiences audiencia = Main.plugin.getAdventure();
+		String nombre = retador.getName();
+		// Un nombre con espacios parte el argumento del comando. El texto de arriba ya
+		// dice que escribir, asi que se saltea el boton en vez de ofrecer uno roto.
+		if (audiencia == null || nombre == null || nombre.isEmpty() || nombre.contains(" ")) {
+			return;
+		}
+
+		Component linea = Formatter.absolute().process("<color:#7162FF>» </color>")
+				.append(boton("<color:#56FF3B>[Aceptar]</color>", "/team duelo aceptar " + nombre,
+						"<color:#E4D9FF>Aceptar el duelo de </color><color:#9235FF>" + nombre))
+				.append(Formatter.absolute().process("  "))
+				.append(boton("<color:#FF4554>[Rechazar]</color>", "/team duelo rechazar " + nombre,
+						"<color:#E4D9FF>Rechazar el duelo de </color><color:#9235FF>" + nombre));
+
+		for (TeamPlayer miembro : retado.getMembers().getClone()) {
+			if (miembro.getRank() == PlayerRank.DEFAULT) {
+				continue;
+			}
+			Player jugador = Bukkit.getPlayer(miembro.getPlayerUUID());
+			if (jugador != null) {
+				audiencia.player(jugador).sendMessage(linea);
+			}
+		}
+	}
+
+	private static Component boton(String texto, String comando, String ayuda) {
+		return Formatter.absolute().process(texto)
+				.clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand(comando))
+				.hoverEvent(net.kyori.adventure.text.event.HoverEvent
+						.showText(Formatter.absolute().process(ayuda)));
+	}
+
 	private void avisarEnPantallaAlMando(Team clan, String referencia, Object... argumentos) {
 		List<Player> mando = new ArrayList<>();
 		for (TeamPlayer miembro : clan.getMembers().getClone()) {
