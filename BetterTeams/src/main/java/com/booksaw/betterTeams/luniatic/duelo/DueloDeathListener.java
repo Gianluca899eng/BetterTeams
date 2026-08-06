@@ -42,11 +42,17 @@ public class DueloDeathListener implements Listener {
 				&& clanCaido != null && clanAsesino != null
 				&& manager.sonRivales(clanCaido, clanAsesino);
 
-		// Se anota SIEMPRE, tambien cuando no fue el rival: la marca describe la ultima
-		// caida, asi que ahogarse o caer a la lava despues la levanta. Y se anota antes
-		// del filtro de registrarBaja, que solo cuenta a los clanes principales: un
-		// aliado arrastrado tambien esta peleando y no tiene que poder volver.
-		manager.marcarCaida(caido.getUniqueId(), porRival);
+		// El regreso se bloquea por dos motivos, no uno: que te haya matado el rival, o
+		// que hayas caido pegado a su base. Sin lo segundo el atajo era obvio: tirarse a
+		// la lava adentro de la base enemiga para conservar el /dback.
+		boolean bloquearRegreso = porRival
+				|| (clanCaido != null && manager.cercaDeBaseRival(caido.getLocation(), clanCaido));
+
+		// Se anota SIEMPRE, tambien cuando no aplica: la marca describe la ultima caida,
+		// asi que morir despues lejos y de otra forma la levanta. Y se anota antes del
+		// filtro de registrarBaja, que solo cuenta a los clanes principales: un aliado
+		// arrastrado tambien esta peleando y no tiene que poder volver.
+		manager.marcarCaida(caido.getUniqueId(), bloquearRegreso);
 
 		if (!porRival) {
 			return;

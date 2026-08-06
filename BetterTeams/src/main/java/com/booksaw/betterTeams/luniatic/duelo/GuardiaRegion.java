@@ -7,8 +7,12 @@ import com.sk89q.worldguard.protection.ApplicableRegionSet;
 import com.sk89q.worldguard.protection.flags.Flags;
 import com.sk89q.worldguard.protection.flags.StateFlag;
 import com.sk89q.worldguard.protection.managers.RegionManager;
+import com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import org.bukkit.Location;
+
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Decide si el duelo puede pelearse en un lugar.
@@ -67,6 +71,63 @@ public class GuardiaRegion {
 				}
 			}
 			return true;
+		} catch (Throwable t) {
+			return false;
+		}
+	}
+
+	/**
+	 * Si hay un claim de alguno de esos jugadores tocando el cubo de radio {@code radio}
+	 * alrededor de la ubicacion.
+	 *
+	 * <p>Se usa para dos cosas: saber si moriste pegado a una base enemiga, y si estas
+	 * parado adentro de una. El radio existe por lo primero: morir tres bloques afuera
+	 * del claim es morir en la puerta, y sin margen alcanzaba con retroceder un paso
+	 * antes de tirarse a la lava.
+	 *
+	 * <p>Cuenta dueños <b>y</b> miembros: a un companero agregado al claim la base
+	 * tambien le pertenece.
+	 *
+	 * <p>Ante cualquier error devuelve false, igual que {@link #permitePvp}: un fallo
+	 * no puede inventar una restriccion que no existe.
+	 */
+	public boolean hayClaimDe(Location ubicacion, Set<UUID> jugadores, int radio) {
+		try {
+			if (ubicacion == null || ubicacion.getWorld() == null
+					|| jugadores == null || jugadores.isEmpty()) {
+				return false;
+			}
+			RegionManager gestor = WorldGuard.getInstance().getPlatform().getRegionContainer()
+					.get(BukkitAdapter.adapt(ubicacion.getWorld()));
+			if (gestor == null) {
+				return false;
+			}
+
+			int x = ubicacion.getBlockX();
+			int y = ubicacion.getBlockY();
+			int z = ubicacion.getBlockZ();
+			ApplicableRegionSet regiones;
+			if (radio <= 0) {
+				regiones = gestor.getApplicableRegions(BlockVector3.at(x, y, z));
+			} else {
+				// Una sola consulta con un cubo, en vez de muestrear puntos sueltos:
+				// muestrear se saltea claims que entran por una esquina.
+				regiones = gestor.getApplicableRegions(new ProtectedCuboidRegion("luniatic_consulta",
+						BlockVector3.at(x - radio, y - radio, z - radio),
+						BlockVector3.at(x + radio, y + radio, z + radio)));
+			}
+
+			for (ProtectedRegion region : regiones) {
+				if (!esClaim(region)) {
+					continue;
+				}
+				for (UUID jugador : jugadores) {
+					if (region.getOwners().contains(jugador) || region.getMembers().contains(jugador)) {
+						return true;
+					}
+				}
+			}
+			return false;
 		} catch (Throwable t) {
 			return false;
 		}

@@ -6,6 +6,7 @@ import com.booksaw.betterTeams.Team;
 import com.booksaw.betterTeams.TeamPlayer;
 import com.booksaw.betterTeams.message.MessageManager;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
 import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 import net.kyori.adventure.text.Component;
@@ -54,6 +55,7 @@ public class DueloManager {
 	private final boolean debug;
 	private final boolean pisaClaims;
 	private final Set<String> comandosBloqueados;
+	private final int radioBaseRival;
 	/** Quienes cayeron a manos de un rival y todavia no volvieron a morir de otra forma. */
 	private final Set<UUID> caidosPorRival = new java.util.HashSet<>();
 	private DueloBossBar barra;
@@ -164,6 +166,7 @@ public class DueloManager {
 			debug = false;
 			pisaClaims = false;
 			comandosBloqueados = java.util.Collections.emptySet();
+			radioBaseRival = 0;
 			return;
 		}
 		habilitado = seccion.getBoolean("enabled", false);
@@ -181,6 +184,7 @@ public class DueloManager {
 		debug = seccion.getBoolean("debug", false);
 		pisaClaims = seccion.getBoolean("pisa-claims", true);
 		comandosBloqueados = leerComandosBloqueados(seccion);
+		radioBaseRival = Math.max(0, seccion.getInt("radio-base-rival", 8));
 	}
 
 	/**
@@ -229,9 +233,51 @@ public class DueloManager {
 		}
 	}
 
-	/** Si su ultima caida fue a manos del clan rival. */
+	/** Si su ultima caida fue a manos del clan rival, o pegada a una base rival. */
 	public boolean cayoPorRival(UUID jugador) {
 		return caidosPorRival.contains(jugador);
+	}
+
+	/**
+	 * Los UUID de todos los miembros del bando rival de ese clan.
+	 *
+	 * <p>Vacio si el clan no esta en duelo. Recorre los miembros de cada clan del bando,
+	 * asi que no se llama por tick: hoy sale una vez por muerte.
+	 */
+	public Set<UUID> miembrosDelBandoRival(Team clan) {
+		Duelo duelo = getDuelo(clan);
+		if (duelo == null) {
+			return java.util.Collections.emptySet();
+		}
+		Set<UUID> miembros = new java.util.HashSet<>();
+		for (UUID idClan : duelo.getBandoRival(clan.getID())) {
+			Team rival = Team.getTeam(idClan);
+			if (rival == null) {
+				continue;
+			}
+			for (TeamPlayer miembro : rival.getMembers().getClone()) {
+				miembros.add(miembro.getPlayerUUID());
+			}
+		}
+		return miembros;
+	}
+
+	/**
+	 * Si esa ubicacion esta pegada a una base del bando rival.
+	 *
+	 * <p>Existe para tapar el atajo obvio de la regla de {@code /dback}: si solo contara
+	 * quien te mato, alcanzaba con tirarse a la lava adentro de la base enemiga para
+	 * conservar el regreso.
+	 */
+	public boolean cercaDeBaseRival(Location ubicacion, Team clan) {
+		if (guardia == null || clan == null) {
+			return false;
+		}
+		return guardia.hayClaimDe(ubicacion, miembrosDelBandoRival(clan), radioBaseRival);
+	}
+
+	public int getRadioBaseRival() {
+		return radioBaseRival;
 	}
 
 	/**
