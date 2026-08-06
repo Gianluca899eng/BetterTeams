@@ -133,6 +133,114 @@ public class GuardiaRegion {
 		}
 	}
 
+	/**
+	 * Los ids de los claims de esos jugadores que cubren la ubicacion.
+	 *
+	 * <p>Devuelve ids y no un booleano porque hace falta comparar <b>que</b> claim, no
+	 * solo si hay uno: cortarle el vuelo al defensor exige que el rival este en la
+	 * misma base donde esta el, no en otra del clan al otro lado del mapa.
+	 */
+	public Set<String> claimsDe(Location ubicacion, Set<UUID> jugadores) {
+		Set<String> ids = new java.util.HashSet<>();
+		try {
+			if (ubicacion == null || ubicacion.getWorld() == null
+					|| jugadores == null || jugadores.isEmpty()) {
+				return ids;
+			}
+			RegionManager gestor = WorldGuard.getInstance().getPlatform().getRegionContainer()
+					.get(BukkitAdapter.adapt(ubicacion.getWorld()));
+			if (gestor == null) {
+				return ids;
+			}
+			ApplicableRegionSet regiones = gestor.getApplicableRegions(BlockVector3.at(
+					ubicacion.getBlockX(), ubicacion.getBlockY(), ubicacion.getBlockZ()));
+			for (ProtectedRegion region : regiones) {
+				if (!esClaim(region)) {
+					continue;
+				}
+				for (UUID jugador : jugadores) {
+					if (region.getOwners().contains(jugador) || region.getMembers().contains(jugador)) {
+						ids.add(region.getId());
+						break;
+					}
+				}
+			}
+			return ids;
+		} catch (Throwable t) {
+			return ids;
+		}
+	}
+
+	/**
+	 * Resuelve de una sola consulta las dos preguntas que hace el corte de vuelo:
+	 * si la ubicacion cae en un claim rival, y en cuales claims propios cae.
+	 *
+	 * <p>Existe porque las dos miran <b>el mismo punto</b>: preguntarlo dos veces era
+	 * pagar dos busquedas de regiones por jugador y por segundo para el mismo lugar.
+	 */
+	public Ubicacion clasificar(Location ubicacion, Set<UUID> rivales, Set<UUID> propios) {
+		Set<String> mios = new java.util.HashSet<>();
+		try {
+			if (ubicacion == null || ubicacion.getWorld() == null) {
+				return new Ubicacion(false, mios);
+			}
+			RegionManager gestor = WorldGuard.getInstance().getPlatform().getRegionContainer()
+					.get(BukkitAdapter.adapt(ubicacion.getWorld()));
+			if (gestor == null) {
+				return new Ubicacion(false, mios);
+			}
+			ApplicableRegionSet regiones = gestor.getApplicableRegions(BlockVector3.at(
+					ubicacion.getBlockX(), ubicacion.getBlockY(), ubicacion.getBlockZ()));
+
+			boolean enRival = false;
+			for (ProtectedRegion region : regiones) {
+				if (!esClaim(region)) {
+					continue;
+				}
+				if (!enRival && esDeAlguno(region, rivales)) {
+					enRival = true;
+				}
+				if (esDeAlguno(region, propios)) {
+					mios.add(region.getId());
+				}
+			}
+			return new Ubicacion(enRival, mios);
+		} catch (Throwable t) {
+			return new Ubicacion(false, mios);
+		}
+	}
+
+	private boolean esDeAlguno(ProtectedRegion region, Set<UUID> jugadores) {
+		if (jugadores == null || jugadores.isEmpty()) {
+			return false;
+		}
+		for (UUID jugador : jugadores) {
+			if (region.getOwners().contains(jugador) || region.getMembers().contains(jugador)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Lo que hay en un punto, desde la mirada de un jugador en duelo. */
+	public static final class Ubicacion {
+		private final boolean enBaseRival;
+		private final Set<String> claimsPropios;
+
+		private Ubicacion(boolean enBaseRival, Set<String> claimsPropios) {
+			this.enBaseRival = enBaseRival;
+			this.claimsPropios = claimsPropios;
+		}
+
+		public boolean isEnBaseRival() {
+			return enBaseRival;
+		}
+
+		public Set<String> getClaimsPropios() {
+			return claimsPropios;
+		}
+	}
+
 	/** Mismo criterio que ProtectionStones: sus regiones se llaman psX. */
 	private boolean esClaim(ProtectedRegion region) {
 		String id = region.getId();

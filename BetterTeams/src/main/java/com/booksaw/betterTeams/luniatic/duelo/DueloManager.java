@@ -59,7 +59,7 @@ public class DueloManager {
 	/** Quienes cayeron a manos de un rival y todavia no volvieron a morir de otra forma. */
 	private final Set<UUID> caidosPorRival = new java.util.HashSet<>();
 	/** Caches del corte de vuelo. Se limpian al cerrarse el ultimo duelo. */
-	private final Map<UUID, RespuestaCacheada> rivalEnCasa = new HashMap<>();
+	private final Map<UUID, ClaimsCacheados> rivalEnCasa = new HashMap<>();
 	private final Map<UUID, MiembrosCacheados> miembrosRivales = new HashMap<>();
 	private final Map<UUID, MiembrosCacheados> miembrosPropios = new HashMap<>();
 	private DueloBossBar barra;
@@ -303,45 +303,58 @@ public class DueloManager {
 		if (clan == null || getDuelo(clan) == null) {
 			return false;
 		}
+		// Una sola consulta de regiones para los dos casos: miran el mismo punto.
+		GuardiaRegion.Ubicacion aca = guardia.clasificar(jugador.getLocation(),
+				miembrosCacheados(clan, true), miembrosCacheados(clan, false));
+
 		// Caso 1: yo adentro de una base rival. Sin radio: la base es la base, no sus
 		// alrededores. El radio de la regla del /dback existe por otro motivo.
-		if (guardia.hayClaimDe(jugador.getLocation(), miembrosCacheados(clan, true), 0)) {
+		if (aca.isEnBaseRival()) {
 			return true;
 		}
-		// Caso 2: un rival adentro de la mia. Se calcula una vez por clan y por segundo,
-		// no una vez por jugador: si el clan tiene diez conectados, los diez comparten
-		// la misma respuesta.
-		return hayRivalEnNuestraBase(clan);
+
+		// Caso 2: un rival adentro de la base donde estoy YO. Si no estoy en ninguna base
+		// propia no hay nada que comparar, y ese es el caso de casi todo el mundo.
+		if (aca.getClaimsPropios().isEmpty()) {
+			return false;
+		}
+		for (String ocupado : claimsPropiosConRival(clan)) {
+			if (aca.getClaimsPropios().contains(ocupado)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
-	 * Si algun rival conectado esta parado adentro de una base de ese clan.
+	 * Ids de los claims del clan donde hay parado un rival ahora mismo.
 	 *
-	 * <p>Cacheado un segundo. Es el unico calculo de todo esto que recorre jugadores, y
-	 * lo pide cada miembro del clan una vez por segundo: sin cache se multiplicaria por
-	 * la cantidad de conectados del clan, para dar siempre el mismo resultado.
+	 * <p>Devuelve el conjunto y no un booleano para que el corte sea preciso: al defensor
+	 * se le baja el vuelo solo si el rival esta en <b>su</b> base, no en otra del clan al
+	 * otro lado del mapa. Ese era el error de la primera version.
+	 *
+	 * <p>Cacheado un segundo <b>por clan</b>. No depende de quien pregunta, asi que los
+	 * diez conectados de un clan comparten el mismo calculo. Es lo unico de todo esto que
+	 * recorre jugadores.
 	 */
-	private boolean hayRivalEnNuestraBase(Team clan) {
+	private Set<String> claimsPropiosConRival(Team clan) {
 		long ahora = System.currentTimeMillis();
-		RespuestaCacheada cacheada = rivalEnCasa.get(clan.getID());
-		if (cacheada != null && cacheada.vence > ahora) {
-			return cacheada.valor;
+		ClaimsCacheados cacheados = rivalEnCasa.get(clan.getID());
+		if (cacheados != null && cacheados.vence > ahora) {
+			return cacheados.ids;
 		}
 
 		Set<UUID> propios = miembrosCacheados(clan, false);
-		boolean hay = false;
+		Set<String> ocupados = new java.util.HashSet<>();
 		for (UUID id : miembrosCacheados(clan, true)) {
 			Player rival = Bukkit.getPlayer(id);
 			if (rival == null || !rival.isOnline()) {
 				continue;
 			}
-			if (guardia.hayClaimDe(rival.getLocation(), propios, 0)) {
-				hay = true;
-				break;
-			}
+			ocupados.addAll(guardia.claimsDe(rival.getLocation(), propios));
 		}
-		rivalEnCasa.put(clan.getID(), new RespuestaCacheada(hay, ahora + 1000L));
-		return hay;
+		rivalEnCasa.put(clan.getID(), new ClaimsCacheados(ocupados, ahora + 1000L));
+		return ocupados;
 	}
 
 	/**
@@ -372,12 +385,12 @@ public class DueloManager {
 		return miembros;
 	}
 
-	private static final class RespuestaCacheada {
-		private final boolean valor;
+	private static final class ClaimsCacheados {
+		private final Set<String> ids;
 		private final long vence;
 
-		private RespuestaCacheada(boolean valor, long vence) {
-			this.valor = valor;
+		private ClaimsCacheados(Set<String> ids, long vence) {
+			this.ids = ids;
 			this.vence = vence;
 		}
 	}
