@@ -115,6 +115,10 @@ public class DueloPlaceholders extends PlaceholderExpansion {
 				return Texto.limpiar(otro == null ? "?" : otro.getName());
 			case "en_duelo":
 				return duelo == null ? "no" : "si";
+			case "base_rival":
+				// Lo lee la regla de wFly para cortar el vuelo: "si" cuando estas adentro
+				// de una base rival, o cuando un rival esta adentro de una tuya.
+				return manager.enZonaDeBaseDelDuelo(jugador.getPlayer()) ? "si" : "no";
 			case "duelo":
 				if (duelo == null) {
 					return "";

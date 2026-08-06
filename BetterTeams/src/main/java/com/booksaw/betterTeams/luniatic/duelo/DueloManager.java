@@ -58,6 +58,10 @@ public class DueloManager {
 	private final int radioBaseRival;
 	/** Quienes cayeron a manos de un rival y todavia no volvieron a morir de otra forma. */
 	private final Set<UUID> caidosPorRival = new java.util.HashSet<>();
+	/** Caches del corte de vuelo. Se limpian al cerrarse el ultimo duelo. */
+	private final Map<UUID, RespuestaCacheada> rivalEnCasa = new HashMap<>();
+	private final Map<UUID, MiembrosCacheados> miembrosRivales = new HashMap<>();
+	private final Map<UUID, MiembrosCacheados> miembrosPropios = new HashMap<>();
 	private DueloBossBar barra;
 	private GuardiaRegion guardia;
 
@@ -278,6 +282,114 @@ public class DueloManager {
 
 	public int getRadioBaseRival() {
 		return radioBaseRival;
+	}
+
+	/**
+	 * Si a ese jugador hay que cortarle el vuelo por estar mezclado con una base del
+	 * duelo. Dos casos, los dos pedidos por Gianluca:
+	 * <ul>
+	 * <li>Esta parado adentro de una base <b>rival</b>.
+	 * <li>Un <b>rival</b> esta parado adentro de una base de <b>su</b> clan.
+	 * </ul>
+	 *
+	 * <p>Lo consulta wFly una vez por segundo y por jugador conectado, asi que el orden
+	 * importa: primero los cortes que no tocan WorldGuard ni recorren clanes.
+	 */
+	public boolean enZonaDeBaseDelDuelo(Player jugador) {
+		if (!habilitado || guardia == null || jugador == null || !hayDuelos()) {
+			return false;
+		}
+		Team clan = Team.getTeam(jugador);
+		if (clan == null || getDuelo(clan) == null) {
+			return false;
+		}
+		// Caso 1: yo adentro de una base rival. Sin radio: la base es la base, no sus
+		// alrededores. El radio de la regla del /dback existe por otro motivo.
+		if (guardia.hayClaimDe(jugador.getLocation(), miembrosCacheados(clan, true), 0)) {
+			return true;
+		}
+		// Caso 2: un rival adentro de la mia. Se calcula una vez por clan y por segundo,
+		// no una vez por jugador: si el clan tiene diez conectados, los diez comparten
+		// la misma respuesta.
+		return hayRivalEnNuestraBase(clan);
+	}
+
+	/**
+	 * Si algun rival conectado esta parado adentro de una base de ese clan.
+	 *
+	 * <p>Cacheado un segundo. Es el unico calculo de todo esto que recorre jugadores, y
+	 * lo pide cada miembro del clan una vez por segundo: sin cache se multiplicaria por
+	 * la cantidad de conectados del clan, para dar siempre el mismo resultado.
+	 */
+	private boolean hayRivalEnNuestraBase(Team clan) {
+		long ahora = System.currentTimeMillis();
+		RespuestaCacheada cacheada = rivalEnCasa.get(clan.getID());
+		if (cacheada != null && cacheada.vence > ahora) {
+			return cacheada.valor;
+		}
+
+		Set<UUID> propios = miembrosCacheados(clan, false);
+		boolean hay = false;
+		for (UUID id : miembrosCacheados(clan, true)) {
+			Player rival = Bukkit.getPlayer(id);
+			if (rival == null || !rival.isOnline()) {
+				continue;
+			}
+			if (guardia.hayClaimDe(rival.getLocation(), propios, 0)) {
+				hay = true;
+				break;
+			}
+		}
+		rivalEnCasa.put(clan.getID(), new RespuestaCacheada(hay, ahora + 1000L));
+		return hay;
+	}
+
+	/**
+	 * Miembros del bando rival o del propio, cacheados cinco segundos.
+	 *
+	 * <p>Recorrer los miembros de cada clan del bando es barato pero no gratis, y la
+	 * composicion de un clan no cambia varias veces por segundo. Cinco segundos de
+	 * atraso al sumar a alguien en pleno duelo no rompe nada.
+	 */
+	private Set<UUID> miembrosCacheados(Team clan, boolean rival) {
+		Map<UUID, MiembrosCacheados> cache = rival ? miembrosRivales : miembrosPropios;
+		long ahora = System.currentTimeMillis();
+		MiembrosCacheados cacheados = cache.get(clan.getID());
+		if (cacheados != null && cacheados.vence > ahora) {
+			return cacheados.miembros;
+		}
+
+		Set<UUID> miembros;
+		if (rival) {
+			miembros = miembrosDelBandoRival(clan);
+		} else {
+			miembros = new java.util.HashSet<>();
+			for (TeamPlayer miembro : clan.getMembers().getClone()) {
+				miembros.add(miembro.getPlayerUUID());
+			}
+		}
+		cache.put(clan.getID(), new MiembrosCacheados(miembros, ahora + 5000L));
+		return miembros;
+	}
+
+	private static final class RespuestaCacheada {
+		private final boolean valor;
+		private final long vence;
+
+		private RespuestaCacheada(boolean valor, long vence) {
+			this.valor = valor;
+			this.vence = vence;
+		}
+	}
+
+	private static final class MiembrosCacheados {
+		private final Set<UUID> miembros;
+		private final long vence;
+
+		private MiembrosCacheados(Set<UUID> miembros, long vence) {
+			this.miembros = miembros;
+			this.vence = vence;
+		}
 	}
 
 	/**
@@ -847,6 +959,9 @@ public class DueloManager {
 		// borrarlas por duelo porque el bloqueo pregunta primero si el clan esta en uno.
 		if (enCurso.isEmpty()) {
 			caidosPorRival.clear();
+			rivalEnCasa.clear();
+			miembrosRivales.clear();
+			miembrosPropios.clear();
 		}
 		guardar();
 	}
