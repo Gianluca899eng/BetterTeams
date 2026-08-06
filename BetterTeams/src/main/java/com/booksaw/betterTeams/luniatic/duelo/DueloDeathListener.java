@@ -35,13 +35,20 @@ public class DueloDeathListener implements Listener {
 
 		Player caido = evento.getEntity();
 		Player asesino = caido.getKiller();
-		if (asesino == null || asesino.equals(caido)) {
-			return;
-		}
-
 		Team clanCaido = Team.getTeam(caido);
-		Team clanAsesino = Team.getTeam(asesino);
-		if (clanCaido == null || clanAsesino == null) {
+		Team clanAsesino = asesino == null ? null : Team.getTeam(asesino);
+
+		boolean porRival = asesino != null && !asesino.equals(caido)
+				&& clanCaido != null && clanAsesino != null
+				&& manager.sonRivales(clanCaido, clanAsesino);
+
+		// Se anota SIEMPRE, tambien cuando no fue el rival: la marca describe la ultima
+		// caida, asi que ahogarse o caer a la lava despues la levanta. Y se anota antes
+		// del filtro de registrarBaja, que solo cuenta a los clanes principales: un
+		// aliado arrastrado tambien esta peleando y no tiene que poder volver.
+		manager.marcarCaida(caido.getUniqueId(), porRival);
+
+		if (!porRival) {
 			return;
 		}
 

@@ -19,6 +19,12 @@ import java.util.Locale;
  * exacto de la pelea al instante, sin caminar. Con el duelo resolviendose por
  * caidas, eso abarata morir.
  *
+ * <p><b>El corte es quirurgico, no general.</b> No alcanza con estar en duelo: hace
+ * falta que tu <b>ultima caida haya sido a manos del clan rival</b>. Si te ahogaste
+ * o te caiste de un risco, volver ahi no te devuelve a ninguna pelea y el comando
+ * anda. Asi el que compro vuelo o rango no pierde el comando por media hora sin
+ * motivo.
+ *
  * <p>Tambien entra {@code /back} por defecto, que no devuelve a la muerte pero
  * habilita el mismo patron un paso antes: teletransportarse fuera de la pelea y
  * volver. La lista es configurable en {@code duelo.comandos-bloqueados}.
@@ -48,6 +54,12 @@ public class DueloComandoListener implements Listener {
 		}
 
 		Player jugador = evento.getPlayer();
+		// La marca es una consulta a un hash y se resuelve sin recorrer clanes, asi que
+		// va antes que Team.getTeam. Sin caida a manos del rival no hay nada que cortar.
+		if (!manager.cayoPorRival(jugador.getUniqueId())) {
+			return;
+		}
+
 		Team clan = Team.getTeam(jugador);
 		if (clan == null || manager.getDuelo(clan) == null) {
 			return;

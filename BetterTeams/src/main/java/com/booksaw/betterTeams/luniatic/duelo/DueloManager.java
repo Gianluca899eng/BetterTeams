@@ -54,6 +54,8 @@ public class DueloManager {
 	private final boolean debug;
 	private final boolean pisaClaims;
 	private final Set<String> comandosBloqueados;
+	/** Quienes cayeron a manos de un rival y todavia no volvieron a morir de otra forma. */
+	private final Set<UUID> caidosPorRival = new java.util.HashSet<>();
 	private DueloBossBar barra;
 	private GuardiaRegion guardia;
 
@@ -210,6 +212,26 @@ public class DueloManager {
 	/** Si hay al menos un comando que bloquear. Evita registrar el listener al pedo. */
 	public boolean hayComandosBloqueados() {
 		return !comandosBloqueados.isEmpty();
+	}
+
+	/**
+	 * Anota como fue la ULTIMA caida del jugador.
+	 *
+	 * <p>Se guarda la ultima y no un contador porque {@code /dback} devuelve al lugar
+	 * de la ultima muerte: si despues caes a la lava, volver ahi ya no te devuelve a
+	 * la pelea y no hay nada que bloquear.
+	 */
+	public void marcarCaida(UUID jugador, boolean porRival) {
+		if (porRival) {
+			caidosPorRival.add(jugador);
+		} else {
+			caidosPorRival.remove(jugador);
+		}
+	}
+
+	/** Si su ultima caida fue a manos del clan rival. */
+	public boolean cayoPorRival(UUID jugador) {
+		return caidosPorRival.contains(jugador);
 	}
 
 	/**
@@ -774,6 +796,11 @@ public class DueloManager {
 		for (UUID id : duelo.todosLosClanes()) {
 			enCurso.remove(id);
 			borrarBarra(Team.getTeam(id));
+		}
+		// Higiene: sin duelos en curso las marcas ya no significan nada. No hace falta
+		// borrarlas por duelo porque el bloqueo pregunta primero si el clan esta en uno.
+		if (enCurso.isEmpty()) {
+			caidosPorRival.clear();
 		}
 		guardar();
 	}
