@@ -151,6 +151,9 @@ public class SQLStorageManager extends TeamManager implements Listener {
 	public void unloadTeam(UUID uuid) {
 		Team team = Team.getTeam(uuid);
 		if (team != null) {
+			// See SeparatedYamlStorageManager: an open view outlives the unloaded Team and
+			// duplicates its contents when the team is loaded again.
+			team.closeEchest();
 			team.saveEchest();
 			if (team.getScoreboardTeamOrNull() != null) {
 				team.getScoreboardTeamOrNull().unregister();

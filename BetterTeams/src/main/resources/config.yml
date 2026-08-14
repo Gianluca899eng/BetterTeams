@@ -738,3 +738,92 @@ rebuildLookups: false
 #
 # Possible Values: [Any whole, positive number]
 invalidateCacheSeconds: 60
+
+# ---------------------------------------------------------------------------
+# Hitos del clan (Luniatic)
+#
+# Un contador de bloques minados por todo el clan, sumado entre sus miembros y
+# acumulado para siempre. Cada hito habilita algo al alcanzarse.
+#
+# No se cruza con el puntaje: el puntaje se gasta al subir de nivel y se resetea
+# con la purga mensual, asi que no sirve de escalera permanente. Este contador no
+# se gasta ni se resetea. Detalle en docs/clanes.md.
+# ---------------------------------------------------------------------------
+hitos:
+  enabled: true
+
+  # Solo cuentan estos materiales. Sin lista blanca, cavar tierra valdria lo mismo
+  # que picar piedra y el hito dejaria de significar mineria.
+  #
+  # El adoquin queda AFUERA a proposito: es lo que tira un generador de lava y agua,
+  # o sea la fuente renovable mas facil de automatizar con un auto-clic.
+  bloques:
+  - STONE
+  - GRANITE
+  - DIORITE
+  - ANDESITE
+  - TUFF
+  - CALCITE
+  - DRIPSTONE_BLOCK
+  - DEEPSLATE
+  - NETHERRACK
+  - BASALT
+  - SMOOTH_BASALT
+  - BLACKSTONE
+  - END_STONE
+  - COAL_ORE
+  - DEEPSLATE_COAL_ORE
+  - IRON_ORE
+  - DEEPSLATE_IRON_ORE
+  - COPPER_ORE
+  - DEEPSLATE_COPPER_ORE
+  - GOLD_ORE
+  - DEEPSLATE_GOLD_ORE
+  - REDSTONE_ORE
+  - DEEPSLATE_REDSTONE_ORE
+  - LAPIS_ORE
+  - DEEPSLATE_LAPIS_ORE
+  - DIAMOND_ORE
+  - DEEPSLATE_DIAMOND_ORE
+  - EMERALD_ORE
+  - DEEPSLATE_EMERALD_ORE
+  - NETHER_GOLD_ORE
+  - NETHER_QUARTZ_ORE
+  - ANCIENT_DEBRIS
+  - AMETHYST_BLOCK
+
+  # Posiciones por mundo que se recuerdan para no contar un bloque que un jugador
+  # acaba de colocar. Es lo unico que impide el bucle de poner y romper el mismo
+  # bloque, que sin esto junta los 100.000 en un rato con un auto-clic.
+  # Cada entrada es un long: 20.000 por mundo es del orden de un mega.
+  memoria-colocados: 20000
+
+  # Cada cuantos segundos se vuelca el contador a disco, y solo si algo cambio.
+  # Tambien se vuelca al apagar el servidor.
+  guardado: 120
+
+  # Los escalones, de menor a mayor. El umbral, el nombre, el icono y la cantidad
+  # se cambian aca; la recompensa no, porque cada valor necesita codigo que la haga
+  # valer. Las validas son COFRE, WARPS y LUGARES.
+  lista:
+    cofre:
+      nombre: 'El cofre del clan'
+      descripcion: 'Un cofre compartido de 27 lugares, con /clan echest.'
+      umbral: 100000
+      icono: ENDER_CHEST
+      recompensa: COFRE
+      cantidad: 1
+    warp:
+      nombre: 'Un warp más'
+      descripcion: 'Un punto de warp más, por encima del límite del nivel.'
+      umbral: 250000
+      icono: OAK_SIGN
+      recompensa: WARPS
+      cantidad: 1
+    lugares:
+      nombre: 'Cinco lugares más'
+      descripcion: 'Cinco miembros más, por encima del límite del nivel.'
+      umbral: 500000
+      icono: PLAYER_HEAD
+      recompensa: LUGARES
+      cantidad: 5

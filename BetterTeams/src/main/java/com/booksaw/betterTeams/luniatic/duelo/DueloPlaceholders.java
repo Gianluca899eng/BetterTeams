@@ -16,15 +16,24 @@ import org.jetbrains.annotations.NotNull;
  *
  * <ul>
  * <li>{@code %luniaticclanes_pvp_estado%} - la linea de PvP del scoreboard, ya armada:
- * {@code ᴏɴ}, {@code ᴏꜰꜰ}, o {@code ᴏꜰꜰ} amarillo si estas en guerra y aca te pueden
- * pegar. <b>Es el unico que responde siempre</b>, haya duelos o no.
- * <li>{@code %luniaticclanes_guerra%} - el clan rival, o vacio.
+ * {@code ᴏɴ}, {@code ᴏꜰꜰ}, o {@code ᴏꜰꜰ} amarillo si estas en duelo y aca te pueden
+ * pegar. <b>Responde siempre</b>, haya duelos o no.
+ * <li>{@code %luniaticclanes_etiqueta%} - la etiqueta del clan sin corchetes, con su color,
+ * para el nombre flotante. <b>Responde siempre</b> tambien.
+ * <li>{@code %luniaticclanes_duelo%} - el clan rival, o vacio.
  * <li>{@code %luniaticclanes_aviso_pvp%} - el aviso, o vacio si no corresponde.
  * <li>{@code %luniaticclanes_duelo%} - el marcador corto, o vacio.
  * <li>{@code %luniaticclanes_en_duelo%} - si o no.
  * </ul>
  */
 public class DueloPlaceholders extends PlaceholderExpansion {
+
+	// Constantes ya coloreadas: TAB las pide cada pocos segundos por jugador conectado, y
+	// pasarlas por MiniMessage en cada pedido era rearmar siempre el mismo texto.
+	private static final String PVP_ON = Texto.col("&#56FF3Bᴏɴ");
+	private static final String PVP_OFF = Texto.col("&#FF4554ᴏꜰꜰ");
+	private static final String PVP_OFF_CONDICION = Texto.col("&eᴏꜰꜰ*");
+	private static final String SEPARADOR = Texto.col("&#7162FF| ");
 
 	private final DueloManager manager;
 
@@ -60,7 +69,7 @@ public class DueloPlaceholders extends PlaceholderExpansion {
 
 		// 🔑 pvp_estado va ANTES del corte por "no hay duelos": es la linea normal de PvP
 		// del scoreboard, no un dato del duelo. Con el corte adelante, la linea quedaba
-		// vacia apenas terminaba una guerra —y para todo el servidor, que nunca tuvo
+		// vacia apenas terminaba un duelo —y para todo el servidor, que nunca tuvo
 		// una— asi que el PvP desaparecia del cartel por completo.
 		//
 		// No cuesta lo que costaba el resto: no resuelve el clan. EstadoPvp es una
@@ -72,15 +81,38 @@ public class DueloPlaceholders extends PlaceholderExpansion {
 			// ese scoreboard, para no inventar un color: la paleta de Fotz no tiene uno
 			// de exito, y el amarillo es el que ya usaba esta misma linea.
 			//
-			// El asterisco del estado de guerra no es decoracion: el color solo es la
+			// El asterisco del estado de duelo no es decoracion: el color solo es la
 			// senial mas debil —es lo que hizo fracasar la paleta original— y ademas no
 			// se puede confiar en como lo pinta Bedrock. Con el asterisco, "off con
 			// condicion" se distingue de "off" aunque el color no llegue.
 			if (EstadoPvp.tienePvp(jugador.getPlayer())) {
-				return Texto.col("&#56FF3Bᴏɴ");
+				return PVP_ON;
 			}
-			return Texto.col(manager.isHabilitado() && manager.pvpForzadoAca(jugador.getPlayer())
-					? "&eᴏꜰꜰ*" : "&#FF4554ᴏꜰꜰ");
+			return manager.isHabilitado() && manager.pvpForzadoAca(jugador.getPlayer())
+					? PVP_OFF_CONDICION : PVP_OFF;
+		}
+
+		// La etiqueta del clan SIN CORCHETES, con su color y con su separador adelante. Se
+		// diferencia de %betterTeams_tag% en los corchetes: ese los trae porque esta pensado
+		// para el chat, donde hay texto al lado y hacen falta.
+		//
+		// 🔑 <b>El separador viaja adentro y no en el formato de TAB.</b> Puesto alla, el
+		// jugador sin clan se queda con la barra colgando —"❤ 20 |"—, porque el formato es
+		// uno solo para todos. Adentro, o salen los dos o no sale ninguno.
+		//
+		// Va antes del corte por duelos: se dibuja sobre la cabeza de todos, haya duelos o no.
+		if ("etiqueta".equalsIgnoreCase(parametro)) {
+			Team suClan = Team.getTeam(jugador);
+			if (suClan == null) {
+				return "";
+			}
+			String etiqueta = suClan.getOriginalTag();
+			if (etiqueta.isEmpty()) {
+				return "";
+			}
+			// La barra en el violeta de estructura, la etiqueta en el color de su clan.
+			return SEPARADOR
+					+ (suClan.getColor() == null ? "" : suClan.getColor().toString()) + etiqueta;
 		}
 
 		// El resto si son datos del duelo. TAB los pide cada pocos segundos por jugador
@@ -105,9 +137,11 @@ public class DueloPlaceholders extends PlaceholderExpansion {
 					return "";
 				}
 				return Texto.col(manager.getAvisoTab());
-			case "guerra":
-				// La linea "Guerra con:", vacia si no hay duelo. TAB la usa con una
-				// display-condition, asi que quien no esta en guerra no ve el renglon.
+			case "rival":
+				// El nombre del clan rival, vacio si no hay duelo. TAB lo usa con una
+				// display-condition, asi que quien no esta en duelo no ve el renglon.
+				// Se llamaba "guerra" hasta que el termino se estandarizo en duelo; no
+				// puede llamarse "duelo" porque esa clave ya es el marcador corto.
 				if (duelo == null) {
 					return "";
 				}

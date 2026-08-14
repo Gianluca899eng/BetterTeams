@@ -4,6 +4,7 @@ import com.booksaw.betterTeams.Main;
 import com.booksaw.betterTeams.PlayerRank;
 import com.booksaw.betterTeams.Team;
 import com.booksaw.betterTeams.TeamPlayer;
+import com.booksaw.betterTeams.luniatic.Texto;
 import com.booksaw.betterTeams.message.MessageManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -56,6 +57,50 @@ public class DueloManager {
 	private final boolean pisaClaims;
 	private final Set<String> comandosBloqueados;
 	private final int radioBaseRival;
+	private final boolean bloquearTeletransporte;
+	private final boolean bloquearRespawnCama;
+	private final boolean avisoDeDuelo;
+	private final boolean libroDeDuelo;
+	private final long esperaTrasRechazoMillis;
+	/**
+	 * Las lineas de la advertencia que recibe cada participante al empezar el duelo.
+	 *
+	 * <p>Son varias claves y no una sola con saltos: asi cada linea se puede traducir,
+	 * reordenar o borrar desde el archivo de mensajes sin tocar codigo.
+	 */
+	private static final String[] AVISOS_DE_GUERRA = {
+			"duelo.advertencia_titulo",
+			"duelo.advertencia_matan",
+			"duelo.advertencia_aliados",
+			"duelo.advertencia_base",
+			"duelo.advertencia_perdes",
+			"duelo.advertencia_claims",
+			"duelo.advertencia_salir"
+	};
+	private final Set<String> comandosDeCasa;
+	/**
+	 * Quien entra a los duelos: por jugador y por clan.
+	 *
+	 * <p>Se crea siempre, aunque los duelos esten apagados: el jugador tiene que poder
+	 * dejar elegida su preferencia antes de que exista la primera duelo. Leer un archivo
+	 * que no existe no cuesta nada y no lo crea.
+	 */
+	private final DueloPreferencias preferencias = new DueloPreferencias();
+	/** Lo que hay que entregarle al que estaba desconectado cuando arranco el duelo. */
+	private final DueloBuzon buzon = new DueloBuzon();
+	/**
+	 * Hasta cuando no puede volver a desafiar cada par: retador → retado → millis.
+	 *
+	 * <p><b>Existe por un agujero concreto, no por precaucion.</b> Un desafio pendiente ya
+	 * bloquea el segundo —{@code ya_desafiado}— y vence solo a las 24 h, asi que el spam por
+	 * repeticion no era posible… salvo despues de un rechazo: ahi el desafio se borra y se
+	 * puede mandar otro en el acto. Con el libro de desafio siendo un item, eso pasa de ser
+	 * molesto a llenarle el inventario a alguien.
+	 *
+	 * <p>Vive en memoria, igual que los desafios: un reinicio lo limpia. Es tolerable porque
+	 * lo que protege son minutos, no dias.
+	 */
+	private final Map<UUID, Map<UUID, Long>> esperaTrasRechazo = new HashMap<>();
 	/** Quienes cayeron a manos de un rival y todavia no volvieron a morir de otra forma. */
 	private final Set<UUID> caidosPorRival = new java.util.HashSet<>();
 	/** Caches del corte de vuelo. Se limpian al cerrarse el ultimo duelo. */
@@ -171,6 +216,12 @@ public class DueloManager {
 			pisaClaims = false;
 			comandosBloqueados = java.util.Collections.emptySet();
 			radioBaseRival = 0;
+			bloquearTeletransporte = false;
+			bloquearRespawnCama = false;
+			comandosDeCasa = java.util.Collections.emptySet();
+			avisoDeDuelo = false;
+			libroDeDuelo = false;
+			esperaTrasRechazoMillis = 0;
 			return;
 		}
 		habilitado = seccion.getBoolean("enabled", false);
@@ -188,7 +239,39 @@ public class DueloManager {
 		debug = seccion.getBoolean("debug", false);
 		pisaClaims = seccion.getBoolean("pisa-claims", true);
 		comandosBloqueados = leerComandosBloqueados(seccion);
-		radioBaseRival = Math.max(0, seccion.getInt("radio-base-rival", 8));
+		radioBaseRival = Math.max(0, seccion.getInt("radio-base-rival", 300));
+		bloquearTeletransporte = seccion.getBoolean("bloquear-aparicion.teletransporte", true);
+		bloquearRespawnCama = seccion.getBoolean("bloquear-aparicion.respawn-cama", true);
+		comandosDeCasa = leerLista(seccion, "bloquear-aparicion.comandos-sethome", "sethome");
+		avisoDeDuelo = seccion.getBoolean("advertencia", true);
+		libroDeDuelo = seccion.getBoolean("libro", true);
+		esperaTrasRechazoMillis = Math.max(0, seccion.getInt("espera-tras-rechazo-minutos", 60)) * 60_000L;
+	}
+
+	/**
+	 * Lee una lista de comandos, normalizada igual que {@link #leerComandosBloqueados}.
+	 *
+	 * <p>Lista vacia significa "no bloquear nada", no "usar el default": el default sale
+	 * cuando la clave no existe. Es la diferencia entre no configurarlo y apagarlo.
+	 */
+	private static Set<String> leerLista(ConfigurationSection seccion, String ruta, String... porDefecto) {
+		List<String> crudos = seccion.contains(ruta)
+				? seccion.getStringList(ruta)
+				: java.util.Arrays.asList(porDefecto);
+		Set<String> limpios = new java.util.HashSet<>();
+		for (String crudo : crudos) {
+			if (crudo == null) {
+				continue;
+			}
+			String limpio = crudo.trim().toLowerCase(Locale.ROOT);
+			if (limpio.startsWith("/")) {
+				limpio = limpio.substring(1);
+			}
+			if (!limpio.isEmpty()) {
+				limpios.add(limpio);
+			}
+		}
+		return limpios;
 	}
 
 	/**
@@ -284,6 +367,60 @@ public class DueloManager {
 		return radioBaseRival;
 	}
 
+	public boolean isBloquearTeletransporte() {
+		return bloquearTeletransporte;
+	}
+
+	public boolean isBloquearRespawnCama() {
+		return bloquearRespawnCama;
+	}
+
+	/** Si hay algo que vigilar; si no, el listener de aparicion no se registra. */
+	public boolean hayBloqueosDeAparicion() {
+		return radioBaseRival > 0
+				&& (bloquearTeletransporte || bloquearRespawnCama || !comandosDeCasa.isEmpty());
+	}
+
+	public boolean esComandoDeCasa(String comando) {
+		return comando != null && comandosDeCasa.contains(comando);
+	}
+
+	/**
+	 * Si a ese jugador no se le puede dejar APARECER en ese punto por estar dentro del
+	 * radio de una base rival.
+	 *
+	 * <p>Es la regla de destino, distinta de la de {@link #cercaDeBaseRival}: aquella mira
+	 * donde moriste, esta mira a donde vas. Con el radio grande cubre lo que la otra no
+	 * puede —volver por {@code /home}, por cama o por un warp— sin depender de como te
+	 * moriste.
+	 *
+	 * <p>🔑 <b>Salvo que ese punto sea una base propia.</b> Sin esa excepcion, dos clanes
+	 * vecinos se quedan sin casa durante todo el duelo, y el que mas pierde es el que vive
+	 * cerca, que no eligio nada. La base propia se resuelve por punto exacto, no por radio:
+	 * lo que se protege es poder entrar a tu casa, no rondarla.
+	 *
+	 * <p>Corre en teletransportes de comando y en respawns, nunca por tick. El orden de los
+	 * chequeos va de lo barato a lo caro: sin duelos en curso cuesta una comparacion.
+	 */
+	public boolean aparicionProhibida(Player jugador, Location destino) {
+		if (!habilitado || guardia == null || jugador == null || destino == null
+				|| radioBaseRival <= 0 || !hayDuelos()) {
+			return false;
+		}
+		Team clan = Team.getTeam(jugador);
+		Duelo duelo = getDuelo(clan);
+		// Al que se bajo del duelo no se le restringe nada: no es parte de ella.
+		if (duelo == null || !duelo.esParticipante(jugador.getUniqueId())) {
+			return false;
+		}
+		if (!guardia.hayClaimDe(destino, miembrosCacheados(clan, true), radioBaseRival)) {
+			return false;
+		}
+		// Excepcion de base propia. Se pregunta ultimo, y solo cuando el destino ya cayo en
+		// zona rival: es el caso raro.
+		return guardia.claimsDe(destino, miembrosCacheados(clan, false)).isEmpty();
+	}
+
 	/**
 	 * Si a ese jugador hay que cortarle el vuelo por estar mezclado con una base del
 	 * duelo. Dos casos, los dos pedidos por Gianluca:
@@ -300,7 +437,9 @@ public class DueloManager {
 			return false;
 		}
 		Team clan = Team.getTeam(jugador);
-		if (clan == null || getDuelo(clan) == null) {
+		Duelo duelo = getDuelo(clan);
+		// Al que se bajo del duelo no se le corta el vuelo: no la esta peleando.
+		if (duelo == null || !duelo.esParticipante(jugador.getUniqueId())) {
 			return false;
 		}
 		// Una sola consulta de regiones para los dos casos: miran el mismo punto.
@@ -590,13 +729,39 @@ public class DueloManager {
 		if (recibidos == null || recibidos.remove(retador.getID()) == null) {
 			return Resultado.error("duelo.sin_desafio");
 		}
+		// El que fue rechazado tiene que esperar antes de volver a desafiar a ESE clan.
+		// Sin esto, rechazar es lo que habilita el spam: el desafio se borra y se puede
+		// mandar otro en el acto.
+		if (esperaTrasRechazoMillis > 0) {
+			esperaTrasRechazo.computeIfAbsent(retador.getID(), id -> new HashMap<>())
+					.put(retado.getID(), System.currentTimeMillis() + esperaTrasRechazoMillis);
+		}
 		avisar(retador, "duelo.rechazado", retado.getName());
 		return Resultado.ok("duelo.rechazaste", retador.getName());
 	}
 
+	/** Minutos que le faltan a ese clan para poder volver a desafiar al otro; 0 si puede ya. */
+	private long minutosDeEspera(UUID retador, UUID retado) {
+		Map<UUID, Long> suyos = esperaTrasRechazo.get(retador);
+		if (suyos == null) {
+			return 0;
+		}
+		Long hasta = suyos.get(retado);
+		if (hasta == null) {
+			return 0;
+		}
+		long faltan = hasta - System.currentTimeMillis();
+		return faltan <= 0 ? 0 : Math.max(1, faltan / 60_000L);
+	}
+
 	/** Si el clan esta libre para pactar un duelo. */
 	public boolean estaLibre(Team clan) {
-		return clan != null && !enCurso.containsKey(clan.getID());
+		return clan != null && estaLibre(clan.getID());
+	}
+
+	/** Por id, para no cargar el clan entero solo para saber si esta en duelo. */
+	public boolean estaLibre(UUID clanId) {
+		return clanId != null && !enCurso.containsKey(clanId);
 	}
 
 	/** True solo si estan en el mismo duelo y en bandos opuestos. */
@@ -665,7 +830,7 @@ public class DueloManager {
 			}
 			duracion = pactada;
 			// 🔑 El desafio se consume SOLO si el duelo arranco. Antes se borraba
-			// antes de intentar, asi que aceptar sin plata en el banco te dejaba sin
+			// antes de intentar, asi que aceptar sin dinero en el banco te dejaba sin
 			// invitacion y sin duelo: habia que pedirle al otro que la mandara de
 			// nuevo por un error que no cambiaba nada del acuerdo.
 			Resultado resultado = arrancar(retado, retador, apuesta, duracion);
@@ -676,9 +841,17 @@ public class DueloManager {
 		}
 
 		// Desde aca es un desafio nuevo: sin eleccion va el preset mas corto, para que
-		// mandar una semana de guerra sea siempre una decision y nunca lo que pasa solo.
+		// mandar una semana de duelo sea siempre una decision y nunca lo que pasa solo.
 		if (duracion == null) {
 			duracion = duracionPorDefecto();
+		}
+
+		// La espera se comprueba SOLO en la rama de desafio nuevo: si esto termino siendo
+		// una aceptacion, ya se resolvio arriba. Rechazar un desafio y aceptar el suyo no
+		// tiene por que estar penado.
+		long faltan = minutosDeEspera(retador.getID(), retado.getID());
+		if (faltan > 0) {
+			return Resultado.error("duelo.espera_para_desafiar", retado.getName(), String.valueOf(faltan));
 		}
 
 		Map<UUID, Desafio> susRecibidos = desafios.computeIfAbsent(retado.getID(), id -> new HashMap<>());
@@ -689,8 +862,9 @@ public class DueloManager {
 			return Resultado.error("duelo.sin_fondos", fmt(apuesta));
 		}
 
-		susRecibidos.put(retador.getID(),
-				new Desafio(retador.getID(), apuesta, duracion.id, System.currentTimeMillis() + esperaMillis));
+		long vence = System.currentTimeMillis() + esperaMillis;
+		susRecibidos.put(retador.getID(), new Desafio(retador.getID(), apuesta, duracion.id, vence));
+		entregarDesafio(retador, retado, apuesta, duracion, vence);
 		avisar(retado, "duelo.recibido", retador.getName(), fmt(apuesta), duracion.etiqueta);
 		// Y en pantalla al mando, que es el unico que puede responderlo: un mensaje
 		// de chat se pierde entre lo demas y el desafio se queda esperando.
@@ -701,6 +875,26 @@ public class DueloManager {
 	}
 
 	private Resultado arrancar(Team unClan, Team otroClan, double apuesta, Duracion duracion) {
+		// Los aliados se congelan al arrancar: aliarse en medio del duelo no trae
+		// refuerzos, y desaliarse no saca a nadie del lio en el que ya estaba.
+		Duelo duelo = new Duelo(unClan.getID(), aliadosLibres(unClan),
+				otroClan.getID(), aliadosLibres(otroClan),
+				apuesta, System.currentTimeMillis() + duracion.millis,
+				duracion.millis, duracion.bajas);
+
+		// Y los participantes tambien, por el mismo motivo: si se leyera en vivo,
+		// alcanzaria con bajarse cuando te estan por matar.
+		Set<UUID> ladoA = participantesDe(duelo.getBando(unClan.getID()));
+		Set<UUID> ladoB = participantesDe(duelo.getBando(otroClan.getID()));
+		// Se comprueba ANTES de tocar el dinero: devolver un error despues de descontar el
+		// pozo dejaria a los dos clanes sin duelo y sin dinero.
+		if (ladoA.isEmpty() || ladoB.isEmpty()) {
+			return Resultado.error("duelo.sin_participantes");
+		}
+		Set<UUID> participantes = new java.util.HashSet<>(ladoA);
+		participantes.addAll(ladoB);
+		duelo.congelarParticipantes(participantes);
+
 		if (apuesta > 0) {
 			if (unClan.getMoney() < apuesta) {
 				return Resultado.error("duelo.rival_sin_fondos", unClan.getName());
@@ -713,12 +907,6 @@ public class DueloManager {
 			otroClan.setMoney(otroClan.getMoney() - apuesta);
 		}
 
-		// Los aliados se congelan al arrancar: aliarse en medio del duelo no trae
-		// refuerzos, y desaliarse no saca a nadie del lio en el que ya estaba.
-		Duelo duelo = new Duelo(unClan.getID(), aliadosLibres(unClan),
-				otroClan.getID(), aliadosLibres(otroClan),
-				apuesta, System.currentTimeMillis() + duracion.millis,
-				duracion.millis, duracion.bajas);
 		for (UUID id : duelo.todosLosClanes()) {
 			enCurso.put(id, duelo);
 		}
@@ -750,8 +938,285 @@ public class DueloManager {
 					"duelo.aviso_global", unClan.getName(), otroClan.getName());
 		}
 
+		advertirYEntregarLibro(duelo, unClan, otroClan, duracion);
 		dibujarTodos(duelo);
 		return Resultado.ok("duelo.arranco_confirmacion", unClan.getName());
+	}
+
+	/**
+	 * Los aliados que entrarian con ese clan si el duelo empezara ahora.
+	 *
+	 * <p>Lo usa el menu para que el que recibe un desafio sepa contra cuantos se esta
+	 * metiendo <b>antes</b> de aceptar. Ya descuenta a los que estan en otro duelo y a los
+	 * que decidieron no entrar en duelos ajenas.
+	 */
+	public Set<UUID> aliadosQueEntrarian(Team clan) {
+		return clan == null ? java.util.Collections.emptySet() : aliadosLibres(clan);
+	}
+
+	/**
+	 * Cuantos jugadores pondria ese bando: el clan mas sus aliados, contando solo a los
+	 * que participan.
+	 *
+	 * <p>Es el numero honesto para decidir si aceptar. Un conteo de miembros a secas
+	 * mentiria en la direccion peligrosa: parecerian mas de los que van a pelear.
+	 */
+	public int fuerzaDe(Team clan) {
+		if (clan == null) {
+			return 0;
+		}
+		Set<UUID> clanes = new java.util.LinkedHashSet<>();
+		clanes.add(clan.getID());
+		clanes.addAll(aliadosLibres(clan));
+		return participantesDe(clanes).size();
+	}
+
+	/** Los miembros de esos clanes que eligieron participar. */
+	private Set<UUID> participantesDe(Set<UUID> clanes) {
+		Set<UUID> jugadores = new java.util.LinkedHashSet<>();
+		for (UUID idClan : clanes) {
+			Team clan = Team.getTeam(idClan);
+			if (clan == null) {
+				continue;
+			}
+			for (TeamPlayer miembro : clan.getMembers().getClone()) {
+				if (preferencias.participa(miembro.getPlayerUUID())) {
+					jugadores.add(miembro.getPlayerUUID());
+				}
+			}
+		}
+		return jugadores;
+	}
+
+	/**
+	 * La advertencia y el libro, a cada participante.
+	 *
+	 * <p><b>Al que esta desconectado se le encola</b>: un duelo la pactan dos lideres, no
+	 * el clan entero conectado, y el que no estaba es justamente el que menos sabe en que
+	 * lo metieron. Ver {@link DueloBuzon}.
+	 *
+	 * <p>El libro se arma <b>una vez</b> y se le entrega a todos: resolver nombres de
+	 * jugadores desconectados es lo unico caro y no hace falta repetirlo por persona.
+	 */
+	private void advertirYEntregarLibro(Duelo duelo, Team clanA, Team clanB, Duracion duracion) {
+		if (!avisoDeDuelo && !libroDeDuelo) {
+			return;
+		}
+		String titulo = libroDeDuelo ? LibroDelDuelo.titulo(clanA, clanB) : "";
+		List<String> paginas = libroDeDuelo
+				? LibroDelDuelo.paginas(duelo, clanA, clanB, duracion.etiqueta)
+				: java.util.Collections.emptyList();
+
+		// 🔑 El aviso nombra al clan rival, asi que se arma UNA VEZ POR BANDO. Con un solo
+		// texto para los dos, a la mitad de los participantes se le decia que su propio
+		// clan los podia matar. El libro si es el mismo: muestra los dos lados.
+		entregarABando(duelo, duelo.getBando(duelo.getClanA()),
+				avisosContra(clanB, duracion), titulo, paginas);
+		entregarABando(duelo, duelo.getBando(duelo.getClanB()),
+				avisosContra(clanA, duracion), titulo, paginas);
+	}
+
+	/**
+	 * El libro de desafio, a lider y colideres del clan desafiado.
+	 *
+	 * <p>Solo al mando: un miembro comun no puede aceptar ni rechazar, asi que darle un
+	 * libro que no puede usar es ruido — y con el libro siendo un item, ruido que ocupa
+	 * lugar en el inventario.
+	 *
+	 * <p>Al desconectado se le encola <b>con la fecha del desafio</b>, no con la general del
+	 * buzon: si entra tres dias despues, el desafio ya vencio y el libro invitaria a algo que
+	 * no existe.
+	 */
+	private void entregarDesafio(Team retador, Team retado, double apuesta, Duracion duracion, long vence) {
+		if (!libroDeDuelo) {
+			return;
+		}
+		String titulo = LibroDelDuelo.tituloDesafio(retador);
+		List<String> paginas = LibroDelDuelo.paginasDeDesafio(retador, retado, apuesta,
+				duracion.etiqueta, duracion.bajas, fuerzaDe(retador), fuerzaDe(retado),
+				aliadosQueEntrarian(retador), Math.max(1, esperaMillis / 3_600_000L));
+		List<String> sinAvisos = java.util.Collections.emptyList();
+
+		for (TeamPlayer miembro : retado.getMembers().getClone()) {
+			if (miembro.getRank() == PlayerRank.DEFAULT) {
+				continue;
+			}
+			Player conectado = Bukkit.getPlayer(miembro.getPlayerUUID());
+			if (conectado != null && conectado.isOnline()) {
+				entregarLibro(conectado, titulo, paginas);
+			} else {
+				buzon.encolar(miembro.getPlayerUUID(), sinAvisos, titulo, paginas, vence);
+			}
+		}
+	}
+
+	/**
+	 * El libro de resultados, a todos los que pelearon.
+	 *
+	 * <p>Espejo del de arranque, y por el mismo motivo: quien gano, con que marcador y
+	 * cuanto se llevo se dice hoy en un mensaje de chat que se pierde en dos minutos. Al
+	 * que estaba desconectado cuando termino se le encola.
+	 *
+	 * <p>No se entrega cuando el duelo se abandona por apagado del servidor: ahi no hay
+	 * resultado que contar.
+	 */
+	private void entregarResumen(Duelo duelo, LibroDelDuelo.Final comoTermino, Team ganador) {
+		if (!libroDeDuelo) {
+			return;
+		}
+		Team clanA = Team.getTeam(duelo.getClanA());
+		Team clanB = Team.getTeam(duelo.getClanB());
+		String titulo = LibroDelDuelo.tituloResumen(clanA, clanB);
+		List<String> paginas = LibroDelDuelo.paginasDeResumen(duelo, clanA, clanB, comoTermino, ganador);
+		List<String> sinAvisos = java.util.Collections.emptyList();
+
+		// Se recorren los bandos en vez de la lista de participantes: asi un duelo viejo
+		// —guardado antes de que existiera esa lista— tambien reparte el resumen, porque
+		// ahi esParticipante() contesta que si a todos. Los avisos de chat ya salieron por
+		// su cuenta; esto es solo el libro.
+		entregarABando(duelo, duelo.getBando(duelo.getClanA()), sinAvisos, titulo, paginas);
+		entregarABando(duelo, duelo.getBando(duelo.getClanB()), sinAvisos, titulo, paginas);
+	}
+
+	/** Las lineas de la advertencia, nombrando al rival de ese bando. */
+	private List<String> avisosContra(Team rival, Duracion duracion) {
+		List<String> avisos = new ArrayList<>();
+		if (!avisoDeDuelo) {
+			return avisos;
+		}
+		String nombreRival = rival == null ? "?" : rival.getName();
+		for (String referencia : AVISOS_DE_GUERRA) {
+			// Se guarda ya coloreado: al entregarlo desde el buzon se manda como texto
+			// plano, y ahi el &#RRGGBB no lo traduce nadie.
+			avisos.add(Texto.col(MessageManager.getMessage(referencia, nombreRival, duracion.etiqueta)));
+		}
+		return avisos;
+	}
+
+	private void entregarABando(Duelo duelo, Set<UUID> clanes, List<String> avisos,
+			String titulo, List<String> paginas) {
+		for (UUID idClan : clanes) {
+			Team clan = Team.getTeam(idClan);
+			if (clan == null) {
+				continue;
+			}
+			for (TeamPlayer miembro : clan.getMembers().getClone()) {
+				if (duelo.esParticipante(miembro.getPlayerUUID())) {
+					entregarPaquete(miembro.getPlayerUUID(), avisos, titulo, paginas);
+				}
+			}
+		}
+	}
+
+	/** Al conectado se le entrega ahora; al que no esta, se le encola para cuando entre. */
+	private void entregarPaquete(UUID id, List<String> avisos, String titulo, List<String> paginas) {
+		Player conectado = Bukkit.getPlayer(id);
+		if (conectado != null && conectado.isOnline()) {
+			for (String linea : avisos) {
+				conectado.sendMessage(linea);
+			}
+			entregarLibro(conectado, titulo, paginas);
+		} else {
+			buzon.encolar(id, avisos, titulo, paginas);
+		}
+	}
+
+	/** Al inventario, y lo que no entre al piso: perder el libro por inventario lleno seria
+	 * perder justo lo que explica en que te metieron. */
+	private void entregarLibro(Player jugador, String titulo, List<String> paginas) {
+		if (paginas.isEmpty()) {
+			return;
+		}
+		for (org.bukkit.inventory.ItemStack sobrante
+				: jugador.getInventory().addItem(LibroDelDuelo.armar(titulo, paginas)).values()) {
+			jugador.getWorld().dropItem(jugador.getLocation(), sobrante);
+		}
+	}
+
+	/** Entrega lo que quedo pendiente. Lo llama el listener de entrada. */
+	public void entregarPendientes(Player jugador) {
+		buzon.entregar(jugador);
+	}
+
+	public boolean tienePendientes(UUID jugador) {
+		return buzon.tienePendiente(jugador);
+	}
+
+	public DueloPreferencias getPreferencias() {
+		return preferencias;
+	}
+
+	/**
+	 * Suma a alguien al duelo que esta peleando su clan. Herramienta de staff.
+	 *
+	 * <p>El caso que resuelve es concreto: alguien se olvido de anotarse y su clan quedo
+	 * peleando sin el. <b>No le cambia la preferencia</b> para las proximas duelos — eso
+	 * lo elige el jugador, no el staff; el mensaje se lo recuerda.
+	 *
+	 * <p>Le llega la misma advertencia y el mismo libro que a los demas, o se le encolan
+	 * si esta desconectado.
+	 */
+	public Resultado agregarADuelo(org.bukkit.OfflinePlayer jugador) {
+		if (!habilitado) {
+			return Resultado.error("duelo.apagado");
+		}
+		Team clan = Team.getTeam(jugador);
+		if (clan == null) {
+			return Resultado.error("duelo.agregar_sin_clan");
+		}
+		Duelo duelo = getDuelo(clan);
+		if (duelo == null) {
+			return Resultado.error("duelo.agregar_sin_duelo");
+		}
+		if (!duelo.agregarParticipante(jugador.getUniqueId())) {
+			return Resultado.error("duelo.agregar_ya_estaba");
+		}
+		guardar();
+
+		Team rival = Team.getTeam(duelo.rivalDe(clan.getID()));
+		Duracion duracion = duracionDe(duelo);
+		String titulo = libroDeDuelo
+				? LibroDelDuelo.titulo(Team.getTeam(duelo.getClanA()), Team.getTeam(duelo.getClanB()))
+				: "";
+		List<String> paginas = libroDeDuelo
+				? LibroDelDuelo.paginas(duelo, Team.getTeam(duelo.getClanA()),
+						Team.getTeam(duelo.getClanB()), duracion.etiqueta)
+				: java.util.Collections.emptyList();
+		entregarPaquete(jugador.getUniqueId(), avisosContra(rival, duracion), titulo, paginas);
+
+		String nombre = jugador.getName() == null ? jugador.getUniqueId().toString() : jugador.getName();
+		return Resultado.ok("duelo.agregar_ok", nombre, clan.getName());
+	}
+
+	/**
+	 * El preset que corresponde a la duracion de ese duelo.
+	 *
+	 * <p>El duelo guarda milisegundos, no el preset: si alguien edita las duraciones del
+	 * config mientras hay un duelo en curso, ninguno coincide. En ese caso se arma una
+	 * etiqueta con los minutos en vez de reventar.
+	 */
+	private Duracion duracionDe(Duelo duelo) {
+		for (Duracion candidata : duraciones) {
+			if (candidata.millis == duelo.getDuracionMillis()) {
+				return candidata;
+			}
+		}
+		long minutos = Math.max(1, duelo.getDuracionMillis() / 60_000L);
+		return new Duracion("?", minutos + " minutos", duelo.getDuracionMillis(), duelo.getObjetivoBajas());
+	}
+
+	/**
+	 * Si ese jugador esta adentro del duelo de su clan.
+	 *
+	 * <p>Lo consultan todas las reglas del duelo. Sin duelo en curso —o si se bajo— es
+	 * como si el duelo no existiera para el.
+	 */
+	public boolean esParticipante(Player jugador) {
+		if (jugador == null || !hayDuelos()) {
+			return false;
+		}
+		Duelo duelo = getDuelo(Team.getTeam(jugador));
+		return duelo != null && duelo.esParticipante(jugador.getUniqueId());
 	}
 
 	/**
@@ -775,12 +1240,40 @@ public class DueloManager {
 			pagar(rival, duelo.getPozo());
 			avisar(rival, "duelo.gano", clan.getName(), fmt(duelo.getPozo()));
 			avisar(clan, "duelo.perdio", rival.getName(), fmt(duelo.getApuesta()));
+			entregarResumen(duelo, LibroDelDuelo.Final.RENDICION, rival);
 		} else {
 			// El rival dejo de existir: se le devuelve lo suyo al que sigue en pie.
 			pagar(clan, duelo.getPozo());
 			avisar(clan, "duelo.rival_desaparecio");
 		}
 		return Resultado.ok("duelo.rendido");
+	}
+
+	/**
+	 * El clan dejo de existir. Si era principal de un duelo, el duelo se cierra y el pozo
+	 * entero va al rival: sin esto el duelo seguia contra un fantasma hasta que venciera el
+	 * reloj, y al resolverse la mitad del pozo se evaporaba.
+	 */
+	public void alDesbandarse(UUID clanId) {
+		Duelo duelo = clanId == null ? null : enCurso.get(clanId);
+		if (duelo == null) {
+			return;
+		}
+
+		// Un aliado que se desbanda no define el duelo: solo se saca su entrada.
+		if (!duelo.esPrincipal(clanId)) {
+			enCurso.remove(clanId);
+			guardar();
+			return;
+		}
+
+		Team rival = Team.getTeam(duelo.rivalDe(clanId));
+		cerrar(duelo);
+
+		if (rival != null) {
+			pagar(rival, duelo.getPozo());
+			avisar(rival, "duelo.rival_desaparecio");
+		}
 	}
 
 	/**
@@ -812,9 +1305,19 @@ public class DueloManager {
 			if (principalRival != null) {
 				pagar(principalRival, duelo.getPozo());
 				avisar(principalRival, "duelo.gano", clanCaido.getName(), fmt(duelo.getPozo()));
+				avisar(clanCaido, "duelo.perdio", principalRival.getName(), fmt(duelo.getApuesta()));
+			} else {
+				// El clan ganador desaparecio sin pasar por alDesbandarse: borrado a mano o
+				// perdido al cargarlo. Cerrar sin pagar destruiria las DOS apuestas en
+				// silencio, asi que el pozo se lo lleva el que sigue en pie, igual que en
+				// rendirse() cuando el rival ya no existe.
+				pagar(clanCaido, duelo.getPozo());
+				avisar(clanCaido, "duelo.rival_desaparecio");
+				Main.plugin.getLogger().warning("[duelo] el rival de " + clanCaido.getName()
+						+ " ya no existe al cerrarse el duelo; el pozo de " + fmt(duelo.getPozo())
+						+ " vuelve al clan que quedo en pie.");
 			}
-			avisar(clanCaido, "duelo.perdio",
-					principalRival == null ? "?" : principalRival.getName(), fmt(duelo.getApuesta()));
+			entregarResumen(duelo, LibroDelDuelo.Final.OBJETIVO, principalRival);
 			return;
 		}
 
@@ -844,6 +1347,15 @@ public class DueloManager {
 		}
 		desafios.values().removeIf(Map::isEmpty);
 
+		// Las esperas vencidas se limpian aca y no al consultarlas: si no, el mapa se queda
+		// con una entrada por cada rechazo que hubo desde que arranco el servidor.
+		for (Map<UUID, Long> suyas : esperaTrasRechazo.values()) {
+			suyas.values().removeIf(hasta -> hasta <= ahora);
+		}
+		esperaTrasRechazo.values().removeIf(Map::isEmpty);
+
+		buzon.purgarVencidos();
+
 		List<Duelo> terminados = new ArrayList<>();
 		for (Duelo duelo : unicos(enCurso.values())) {
 			if (duelo.vencio(ahora)) {
@@ -869,12 +1381,24 @@ public class DueloManager {
 		UUID ganador = duelo.getGanandoAhora();
 		if (ganador == null) {
 			devolver(duelo, "duelo.empate");
+			entregarResumen(duelo, LibroDelDuelo.Final.EMPATE, null);
 			return;
 		}
 		Team ganadorClan = Team.getTeam(ganador);
 		Team perdedorClan = Team.getTeam(duelo.rivalDe(ganador));
 		if (ganadorClan == null) {
-			devolver(duelo, "duelo.empate");
+			// devolver() le paga a cada clan SU apuesta, asi que con el ganador desaparecido
+			// la mitad del pozo se evaporaba. Se lo lleva entero el que sigue en pie.
+			if (perdedorClan != null) {
+				pagar(perdedorClan, duelo.getPozo());
+				avisar(perdedorClan, "duelo.rival_desaparecio");
+				Main.plugin.getLogger().warning("[duelo] el clan que ganaba por tiempo ya no existe;"
+						+ " el pozo de " + fmt(duelo.getPozo()) + " va a " + perdedorClan.getName() + ".");
+			} else {
+				Main.plugin.getLogger().severe("[duelo] ningun clan del duelo existe al vencer el"
+						+ " reloj; el pozo de " + fmt(duelo.getPozo()) + " se queda sin dueño.");
+			}
+			entregarResumen(duelo, LibroDelDuelo.Final.EMPATE, null);
 			return;
 		}
 		pagar(ganadorClan, duelo.getPozo());
@@ -888,6 +1412,7 @@ public class DueloManager {
 					String.valueOf(duelo.getBajas(ganador)),
 					fmt(duelo.getApuesta()));
 		}
+		entregarResumen(duelo, LibroDelDuelo.Final.TIEMPO, ganadorClan);
 	}
 
 	/** Se llama al apagar el plugin: nadie se queda sin su parte del pozo. */
@@ -952,7 +1477,9 @@ public class DueloManager {
 			return lista;
 		}
 		for (UUID id : clan.getAllies().getClone()) {
-			if (!enCurso.containsKey(id) && Team.getTeam(id) != null) {
+			// Un aliado que decidio no entrar en duelos ajenas se queda afuera. Es la
+			// version de clan de la preferencia individual: el aliado tampoco pacto nada.
+			if (!enCurso.containsKey(id) && Team.getTeam(id) != null && preferencias.ayudaAliados(id)) {
 				lista.add(id);
 			}
 		}
@@ -1049,6 +1576,14 @@ public class DueloManager {
 		double tope = clan.getMaxMoney();
 		double nuevo = clan.getMoney() + monto;
 		if (tope >= 0 && nuevo > tope) {
+			// El tope del banco recorta el pago y ese dinero desaparece. Queda anotado: si no,
+			// el clan cobra menos de lo que dice el mensaje y no hay forma de saber por que.
+			// El maximo con 0 es por si el banco ya estaba por encima del tope, que pasa si
+			// alguien lo baja en el config con clanes ya ricos: ahi no entra nada, no menos.
+			double entra = Math.max(0, tope - clan.getMoney());
+			Main.plugin.getLogger().warning("[duelo] el banco de " + clan.getName() + " esta en su"
+					+ " tope (" + fmt(tope) + "): de " + fmt(monto) + " solo entraron "
+					+ fmt(entra) + ".");
 			nuevo = tope;
 		}
 		clan.setMoney(nuevo);
@@ -1084,10 +1619,10 @@ public class DueloManager {
 		}
 
 		Component linea = Formatter.absolute().process("<color:#7162FF>» </color>")
-				.append(boton("<color:#56FF3B>[Aceptar]</color>", "/team duelo aceptar " + nombre,
+				.append(boton("<color:#56FF3B>[Aceptar]</color>", "/clan duelo aceptar " + nombre,
 						"<color:#E4D9FF>Aceptar el duelo de </color><color:#9235FF>" + nombre))
 				.append(Formatter.absolute().process("  "))
-				.append(boton("<color:#FF4554>[Rechazar]</color>", "/team duelo rechazar " + nombre,
+				.append(boton("<color:#FF4554>[Rechazar]</color>", "/clan duelo rechazar " + nombre,
 						"<color:#E4D9FF>Rechazar el duelo de </color><color:#9235FF>" + nombre));
 
 		for (TeamPlayer miembro : retado.getMembers().getClone()) {

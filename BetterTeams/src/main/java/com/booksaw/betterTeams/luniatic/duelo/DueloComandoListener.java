@@ -1,6 +1,7 @@
 package com.booksaw.betterTeams.luniatic.duelo;
 
 import com.booksaw.betterTeams.Team;
+import com.booksaw.betterTeams.luniatic.Comandos;
 import com.booksaw.betterTeams.message.MessageManager;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -8,14 +9,12 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 
-import java.util.Locale;
-
 /**
  * Corta los comandos de regreso mientras el clan esta en duelo.
  *
  * <p>El problema que resuelve: {@code /dback} devuelve al lugar donde moriste. El
  * tag de combate de PvPManager ya bloquea todos los comandos mientras peleas, pero
- * <b>al morir el tag se va con vos</b>: revivis sin tag y podes volver al punto
+ * <b>al morir el tag se va contigo</b>: revives sin tag y puedes volver al punto
  * exacto de la pelea al instante, sin caminar. Con el duelo resolviendose por
  * caidas, eso abarata morir.
  *
@@ -61,7 +60,9 @@ public class DueloComandoListener implements Listener {
 		}
 
 		Team clan = Team.getTeam(jugador);
-		if (clan == null || manager.getDuelo(clan) == null) {
+		Duelo duelo = manager.getDuelo(clan);
+		// Al que se bajo del duelo no se le corta el regreso: no es parte de ella.
+		if (duelo == null || !duelo.esParticipante(jugador.getUniqueId())) {
 			return;
 		}
 
@@ -70,28 +71,11 @@ public class DueloComandoListener implements Listener {
 	}
 
 	/**
-	 * Deja el nombre del comando en minusculas, sin barra, sin argumentos y sin
-	 * namespace.
-	 *
-	 * <p>El namespace importa: {@code /cmi:dback} es el mismo comando y esquivaria
-	 * una comparacion contra el nombre pelado.
+	 * Deja el nombre del comando listo para comparar contra la lista. Ver
+	 * {@link Comandos}: saca la barra, los argumentos, el namespace y el envoltorio
+	 * {@code /cmi <sub>}, que son las tres formas de escribir el mismo comando.
 	 */
 	private static String normalizar(String mensaje) {
-		if (mensaje == null) {
-			return "";
-		}
-		String texto = mensaje.trim();
-		if (texto.startsWith("/")) {
-			texto = texto.substring(1);
-		}
-		int espacio = texto.indexOf(' ');
-		if (espacio >= 0) {
-			texto = texto.substring(0, espacio);
-		}
-		int namespace = texto.indexOf(':');
-		if (namespace >= 0) {
-			texto = texto.substring(namespace + 1);
-		}
-		return texto.toLowerCase(Locale.ROOT);
+		return Comandos.nombre(mensaje);
 	}
 }

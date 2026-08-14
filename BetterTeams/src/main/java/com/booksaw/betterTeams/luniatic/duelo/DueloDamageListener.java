@@ -2,7 +2,6 @@ package com.booksaw.betterTeams.luniatic.duelo;
 
 import com.booksaw.betterTeams.Main;
 import com.booksaw.betterTeams.Team;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
@@ -44,12 +43,10 @@ public class DueloDamageListener implements Listener {
 
 	public DueloDamageListener(DueloManager manager) {
 		this.manager = manager;
-		this.guardia = Bukkit.getPluginManager().getPlugin("WorldGuard") != null
-				? new GuardiaRegion(manager.isPisaClaims())
-				: null;
-		// El cartel del scoreboard usa la misma guarda: tiene que decir lo mismo que
-		// hace el listener, o avisa "forzado" donde no se puede pegar.
-		manager.setGuardia(guardia);
+		// La guarda la crea Main y vive en el manager: la usan tambien el corte de vuelo,
+		// la regla de aparicion y el cartel del scoreboard. Crearla aca ataba todo eso a
+		// que 'pisa-pvp-individual' estuviera en true, que es de lo que ninguno depende.
+		this.guardia = manager.getGuardia();
 	}
 
 	@EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
@@ -89,30 +86,62 @@ public class DueloDamageListener implements Listener {
 			depurar("no son rivales de duelo: " + atacante.getName() + " -> " + victima.getName());
 			return;
 		}
+		// Los dos tienen que estar adentro del duelo. Alcanza con que uno se haya
+		// bajado para que esto siga siendo un ataque normal, sujeto al /pvp de cada uno:
+		// el que no participa no puede pegar amparado en el duelo ni recibir por el.
+		//
+		// Se pregunta contra el duelo ya resuelto y no con manager.esParticipante(...),
+		// que volveria a recorrer todos los clanes por cada uno de los dos.
+		Duelo duelo = manager.getDuelo(clanVictima);
+		if (duelo == null || !duelo.esParticipante(victima.getUniqueId())
+				|| !duelo.esParticipante(atacante.getUniqueId())) {
+			depurar("alguno no participa del duelo: " + atacante.getName() + " -> " + victima.getName());
+			return;
+		}
 		if (guardia != null && !guardia.permitePvp(victima.getLocation())) {
 			depurar("WorldGuard prohibe PvP en " + resumen(victima) + ", no se destapa");
 			return;
 		}
 
 		evento.setCancelled(false);
-		ultimoDestapado = evento;
+		// Solo se anota con debug: sin el vigilante registrado nadie limpia el campo, y
+		// quedaria reteniendo el ultimo evento de dano para siempre.
+		if (manager.isDebug()) {
+			ultimoDestapado = evento;
+		}
 		depurar("destapado: " + atacante.getName() + " -> " + victima.getName());
 	}
 
 	/**
-	 * Ultimo en la fila: si acá el evento volvio a estar cancelado, otro plugin lo
+	 * El vigilante de la ultima palabra, para que {@code Main} lo registre aparte.
+	 *
+	 * <p>Va en un listener propio y no aca porque se cuelga de
+	 * {@code EntityDamageByEntityEvent} <b>sin</b> {@code ignoreCancelled}: registrado
+	 * siempre, se despacharia en cada golpe de cada mob del servidor —granjas incluidas—
+	 * para comparar una referencia y no hacer nada. Solo tiene sentido con
+	 * {@code duelo.debug} encendido.
+	 */
+	public Listener vigilante() {
+		return new Vigilante();
+	}
+
+	/**
+	 * Ultimo en la fila: si aca el evento volvio a estar cancelado, otro plugin lo
 	 * re-cancelo despues nuestro y el problema es de orden de prioridades, no de
 	 * este listener.
 	 */
-	@EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = false)
-	public void alFinal(EntityDamageByEntityEvent evento) {
-		if (evento != ultimoDestapado) {
-			return;
-		}
-		ultimoDestapado = null;
-		if (evento.isCancelled() && manager.isDebug()) {
-			Main.plugin.getLogger().warning("[duelo] el dano se destapo y OTRO PLUGIN lo volvio a cancelar; "
-					+ "el override no puede ganar en esta cadena de prioridades");
+	private final class Vigilante implements Listener {
+
+		@EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = false)
+		public void alFinal(EntityDamageByEntityEvent evento) {
+			if (evento != ultimoDestapado) {
+				return;
+			}
+			ultimoDestapado = null;
+			if (evento.isCancelled()) {
+				Main.plugin.getLogger().warning("[duelo] el dano se destapo y OTRO PLUGIN lo volvio a cancelar; "
+						+ "el override no puede ganar en esta cadena de prioridades");
+			}
 		}
 	}
 

@@ -135,6 +135,11 @@ public class SeparatedYamlStorageManager extends YamlStorageManager implements L
 	public void unloadTeam(UUID uuid) {
 		Team team = Team.getTeam(uuid);
 		if (team != null) {
+			// Se cierra a quien lo tenga abierto ANTES de soltar el equipo. Si no, esa ventana
+			// sobrevive al Team descargado y, cuando el equipo se vuelve a cargar, el inventario
+			// nuevo sale del disco con los mismos items que todavia estan en la ventana vieja:
+			// las dos se pueden vaciar y el contenido queda duplicado.
+			team.closeEchest();
 			team.saveEchest();
 			if (team.getScoreboardTeamOrNull() != null) {
 				team.getScoreboardTeamOrNull().unregister();
@@ -234,15 +239,28 @@ public class SeparatedYamlStorageManager extends YamlStorageManager implements L
 
 	private <T> String[] sortTeamByX(ValueSorter<T> valueSorter, Comparator<? super CrossReference<T>> comparator) {
 		File folder = SeparatedYamlTeamStorage.getTeamSaveFile();
+		File[] files = folder.listFiles();
 		List<CrossReference<T>> teams = new ArrayList<>();
-		for (File f : folder.listFiles()) {
-			// team has already been resetS
+		if (files == null) {
+			return new String[0];
+		}
+		for (File f : files) {
+			// Only the file which the name lookup points at counts. A disband that could not
+			// delete the file leaves it behind, and every leaderboard then shows that team
+			// again: as a duplicate if the name was reused, as an unresolvable entry if not.
+			UUID id = teamFileId(f);
+			if (id == null) {
+				continue;
+			}
 			try {
 				YamlConfiguration yamlConfig = new YamlConfiguration();
 				yamlConfig.load(f);
 				String name = yamlConfig.getString(StoredTeamValue.NAME.getReference());
 				if (name == null) {
 					throw new IllegalStateException("Team name in " + f.getName() + " is empty, it will be skipped");
+				}
+				if (!id.equals(getTeamUUID(name))) {
+					continue;
 				}
 				teams.add(new CrossReference<>(name, valueSorter.getValueToSort(yamlConfig)));
 			} catch (Exception e) {
@@ -263,6 +281,19 @@ public class SeparatedYamlStorageManager extends YamlStorageManager implements L
 		}
 
 		return rankedTeamsStr;
+	}
+
+	/** The team id a file in teamInfo belongs to, or null if it is not a team file. */
+	private static UUID teamFileId(File f) {
+		String name = f.getName();
+		if (!f.isFile() || !name.endsWith(".yml")) {
+			return null;
+		}
+		try {
+			return UUID.fromString(name.substring(0, name.length() - 4));
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
 	}
 
 	private static class CrossReference<T> {

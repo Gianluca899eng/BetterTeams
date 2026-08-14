@@ -21,6 +21,23 @@
             <artifactId>betterteams-deadends</artifactId>
         </dependency>
 
+        <!--
+          SkinsRestorer: solo para las capas de clan. Va 'provided' porque su API viaja
+          adentro del jar del propio plugin, que ya esta en el servidor.
+          El artefacto se instala en el repo local con:
+            mvn install:install-file -Dfile=SkinsRestorer.jar
+                -DgroupId=net.skinsrestorer -DartifactId=skinsrestorer-jar
+                -Dversion=15.12.5 -Dpackaging=jar
+          Se compila contra el jar completo y no contra el artefacto publicado para que
+          sea exactamente el binario que corre en el servidor.
+        -->
+        <dependency>
+            <groupId>net.skinsrestorer</groupId>
+            <artifactId>skinsrestorer-jar</artifactId>
+            <version>15.12.5</version>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Java dependencies -->
         <dependency>
             <groupId>org.projectlombok</groupId>

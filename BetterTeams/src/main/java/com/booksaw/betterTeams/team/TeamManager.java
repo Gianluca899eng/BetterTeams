@@ -126,22 +126,21 @@ public abstract class TeamManager {
 			return null;
 		}
 
-		// checking if the player is in a loaded team (save hitting secondary storage every time)
+		// the player lookup is O(1), so it is tried before scanning every loaded team; this method
+		// runs on every damage event and every chat message
+		if (isInTeam(player)) {
+			UUID uuid = getTeamUUID(player);
+			if (uuid != null) {
+				Team team = getTeam(uuid);
+				if (team != null) {
+					return team;
+				}
+			}
+		}
+
+		// fallback for a player who is in a loaded team's member list but missing from the lookup
 		Optional<Team> possibleTeam = loadedTeams.values().stream().filter(team -> team.getMembers().contains(player)).findFirst();
-		if (possibleTeam.isPresent()) {
-			return possibleTeam.get();
-		}
-
-		if (!isInTeam(player)) {
-			return null;
-		}
-
-		UUID uuid = getTeamUUID(player);
-		if (uuid == null) {
-			return null;
-		}
-
-		return getTeam(uuid);
+		return possibleTeam.orElse(null);
 	}
 
 	/**
@@ -389,6 +388,9 @@ public abstract class TeamManager {
 	 * @param team The team that is being disbanded
 	 */
 	public void disbandTeam(Team team) {
+		// Nobody may keep looking into the chest of a team that no longer exists: whatever is left
+		// in that view could still be taken out, and its storage is about to be deleted.
+		team.closeEchest();
 		loadedTeams.remove(team.getID());
 
 		// if a team is being disbanded due to invalid team loading, the file should not

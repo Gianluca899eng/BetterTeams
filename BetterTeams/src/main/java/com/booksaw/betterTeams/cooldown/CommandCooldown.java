@@ -4,10 +4,14 @@ import lombok.Getter;
 import org.bukkit.entity.Player;
 
 import java.util.HashMap;
+import java.util.UUID;
 
 public class CommandCooldown {
 
-	final HashMap<Player, Long> nextTime;
+	// Se indexa por UUID y no por Player. CraftEntity.hashCode() es el del UUID, pero su equals()
+	// compara la entidad interna por referencia: al reconectar, el jugador es una clave nueva y la
+	// vieja no vuelve a coincidir nunca, asi que quedaba retenido un Player muerto por sesion.
+	final HashMap<UUID, Long> nextTime;
 
 	@Getter
 	private final int cooldown;
@@ -36,7 +40,7 @@ public class CommandCooldown {
 		if (player.hasPermission("betterteams.cooldown.bypass")) {
 			return;
 		}
-		nextTime.put(player, System.currentTimeMillis() + cooldown);
+		nextTime.put(player.getUniqueId(), System.currentTimeMillis() + cooldown);
 	}
 
 	/**
@@ -52,14 +56,14 @@ public class CommandCooldown {
 			return -1;
 		}
 
-		Long end = nextTime.get(player);
+		Long end = nextTime.get(player.getUniqueId());
 
 		if (end == null) {
 			return -1;
 		}
 
 		if (end < System.currentTimeMillis()) {
-			nextTime.remove(player);
+			nextTime.remove(player.getUniqueId());
 			return -1;
 		}
 

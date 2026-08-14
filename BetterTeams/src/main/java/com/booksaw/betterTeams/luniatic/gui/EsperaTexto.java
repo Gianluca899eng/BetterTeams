@@ -74,7 +74,7 @@ public final class EsperaTexto implements Listener {
         }, SEGUNDOS * 20L);
 
         aviso(jugador, CUERPO + consigna);
-        aviso(jugador, ETIQUETA + "Escribi " + MARCA + CANCELAR + ETIQUETA + " para dejarlo como esta.");
+        aviso(jugador, ETIQUETA + "Escribe " + MARCA + CANCELAR + ETIQUETA + " para dejarlo como esta.");
     }
 
     // El evento de chat es async, asi que todo lo que abra un inventario o toque el
@@ -110,6 +110,6 @@ public final class EsperaTexto implements Listener {
     }
 
     private static void aviso(Player jugador, String texto) {
-        jugador.sendMessage(Texto.col(ETIQUETA + "[Clanes] " + texto));
+        jugador.sendMessage(Texto.col(ETIQUETA + "Clanes » " + texto));
     }
 }

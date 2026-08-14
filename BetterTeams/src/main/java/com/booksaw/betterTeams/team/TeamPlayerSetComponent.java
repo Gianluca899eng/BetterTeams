@@ -40,7 +40,10 @@ public abstract class TeamPlayerSetComponent extends SetTeamComponent<TeamPlayer
 	}
 
 	/**
-	 * @return A list of players which are currently online on this team
+	 * @return A list of the members of this team which are currently OFFLINE
+	 * <p>
+	 * The name says offline and so does the filter; the doc used to say "online", and code that
+	 * trusted it went looking for connected players in a list that excludes them by construction.
 	 */
 	public List<OfflinePlayer> getOfflinePlayers() {
 		return getClone().stream()

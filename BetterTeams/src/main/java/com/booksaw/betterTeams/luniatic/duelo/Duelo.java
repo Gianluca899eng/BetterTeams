@@ -50,6 +50,21 @@ public class Duelo {
 	/** Bajas de cada clan principal. Vive y muere con el duelo. */
 	private int bajasA;
 	private int bajasB;
+	/**
+	 * Los jugadores que entran a este duelo, <b>congelados al arrancar</b>.
+	 *
+	 * <p>Sale de la preferencia de cada uno ({@link DueloPreferencias}), pero se guarda
+	 * aca y no se vuelve a consultar: si se leyera en vivo, bastaria con bajarse cuando te
+	 * estan por matar. Por el mismo motivo, quien entra al clan con el duelo empezada
+	 * tampoco queda adentro.
+	 *
+	 * <p>Mientras no se congelen, participan todos: es como se levanta un duelo guardado
+	 * por una version anterior a esta lista. <b>La marca es el booleano, no que la lista
+	 * este vacia</b> — un duelo donde todos se bajaron tiene lista vacia y no significa
+	 * "todos".
+	 */
+	private final Set<UUID> participantes = new HashSet<>();
+	private boolean participantesCongelados;
 
 	public Duelo(UUID clanA, Set<UUID> aliadosA, UUID clanB, Set<UUID> aliadosB,
 			double apuesta, long finMillis, long duracionMillis, int objetivoBajas) {
@@ -130,6 +145,50 @@ public class Duelo {
 
 	public boolean participa(UUID clan) {
 		return bandoA.contains(clan) || bandoB.contains(clan);
+	}
+
+	/**
+	 * Congela quienes entran a este duelo. Se llama una sola vez, al arrancar el duelo o
+	 * al levantarlo del archivo.
+	 */
+	public void congelarParticipantes(Set<UUID> jugadores) {
+		participantes.clear();
+		if (jugadores != null) {
+			participantes.addAll(jugadores);
+		}
+		participantesCongelados = true;
+	}
+
+	/**
+	 * Si ese jugador entro a este duelo.
+	 *
+	 * <p>Sin congelar contesta que si a todos, que es como se leen los duelos guardados por
+	 * una version anterior a esta lista.
+	 */
+	public boolean esParticipante(UUID jugador) {
+		return !participantesCongelados || participantes.contains(jugador);
+	}
+
+	public boolean tieneParticipantesCongelados() {
+		return participantesCongelados;
+	}
+
+	/**
+	 * Suma a alguien al duelo ya empezada. <b>Solo lo usa el staff</b>.
+	 *
+	 * <p>Existe para el caso real: alguien se olvido de anotarse y su clan esta peleando
+	 * sin el. No lo puede hacer el jugador porque entonces la lista congelada no serviria
+	 * de nada.
+	 *
+	 * <p>Devuelve false si no habia nada que hacer: o ya estaba, o el duelo es de los
+	 * viejos donde participan todos.
+	 */
+	public boolean agregarParticipante(UUID jugador) {
+		return participantesCongelados && jugador != null && participantes.add(jugador);
+	}
+
+	public Set<UUID> getParticipantes() {
+		return Collections.unmodifiableSet(participantes);
 	}
 
 	/** Si ese clan es uno de los dos que pactaron, no un aliado arrastrado. */

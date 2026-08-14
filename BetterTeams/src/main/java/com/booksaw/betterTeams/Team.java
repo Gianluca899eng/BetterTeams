@@ -18,6 +18,7 @@ import com.booksaw.betterTeams.text.LegacyTextUtils;
 import lombok.Getter;
 import org.bukkit.*;
 import org.bukkit.block.Block;
+import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.scoreboard.Scoreboard;
@@ -708,6 +709,10 @@ public class Team {
 	 * @return If the player was removed from the team
 	 */
 	public boolean removePlayer(TeamPlayer p) {
+		// Antes de sacarlo: si esta mirando el cofre del clan, se le cierra. Un ex miembro con la
+		// ventana abierta sigue pudiendo sacar lo de adentro, y es la primera mitad del dupeo.
+		closeEchestFor(p.getPlayer().getPlayer());
+
 		try {
 			members.remove(this, p);
 		} catch (CancelledEventException e) {
@@ -1592,8 +1597,88 @@ public class Team {
 		return echest;
 	}
 
+	/**
+	 * Closes the team chest for everybody who still has it open, saving it first.
+	 * <p>
+	 * This is what stops the chest from duplicating its contents. The Inventory belongs to this
+	 * Team object, but an open InventoryView keeps it alive after the Team is gone: unloading the
+	 * team when its last member logs out and loading it again on their return builds a SECOND
+	 * Inventory from storage, while the first one is still open in front of whoever was left
+	 * looking at it. Both then hold the same items and both can be emptied.
+	 * <p>
+	 * The viewer list is copied before iterating because closing a view removes it from that list.
+	 */
+	public void closeEchest() {
+		Inventory inventory = echest.get();
+		if (inventory == null) {
+			return;
+		}
+		List<HumanEntity> viewers = new ArrayList<>(inventory.getViewers());
+		if (viewers.isEmpty()) {
+			return;
+		}
+		saveEchest();
+		for (HumanEntity viewer : viewers) {
+			closeOnMainThread(viewer, inventory);
+		}
+	}
+
+	/**
+	 * Closes the team chest for one player, if that is what they are looking at.
+	 * <p>
+	 * Used when somebody stops being a member: leaving the team must not leave them holding an
+	 * open window into its chest.
+	 */
+	public void closeEchestFor(@Nullable Player player) {
+		if (player == null) {
+			return;
+		}
+		Inventory inventory = echest.get();
+		if (inventory == null) {
+			return;
+		}
+		saveEchest();
+		closeOnMainThread(player, inventory);
+	}
+
+	/**
+	 * Closes that view, on the thread that owns the entity.
+	 * <p>
+	 * closeInventory() fires InventoryCloseEvent, and Bukkit refuses to fire it off the main
+	 * thread. The commands of this plugin run asynchronously, so calling it directly threw
+	 * IllegalStateException and aborted the kick — which is how this method came to exist.
+	 * <p>
+	 * The check of what the player has open is made inside the task rather than before scheduling
+	 * it: reading that from another thread is the same race, and by the time the task runs the
+	 * player may have closed it themselves.
+	 */
+	private static void closeOnMainThread(@NotNull HumanEntity viewer, @NotNull Inventory inventory) {
+		Runnable close = () -> {
+			if (viewer.getOpenInventory().getTopInventory() == inventory) {
+				viewer.closeInventory();
+			}
+		};
+
+		if (Bukkit.isPrimaryThread()) {
+			close.run();
+			return;
+		}
+		Main.plugin.getFoliaLib().getScheduler().runAtEntity(viewer, task -> close.run());
+	}
+
 	public int getMaxWarps() {
-		return getLevelObject().getMaxWarps();
+		int base = getLevelObject().getMaxWarps();
+		// Luniatic: los hitos suman por encima del limite del nivel.
+		//
+		// El -1 es "sin limite" y no un numero: sumarle el bonus lo convertiria en 0, o sea
+		// que un clan con warps ilimitados se quedaria sin ninguno al alcanzar un hito.
+		// El null se contempla porque este metodo es API publica y se puede llamar antes de
+		// que setupCommands() cree el manager. Un NPE aca dejaria el plugin sin habilitar.
+		if (base == -1 || Main.plugin.getHitosManager() == null) {
+			return base;
+		}
+		return base + Main.plugin.getHitosManager()
+				.bonus(getID(), com.booksaw.betterTeams.luniatic.hitos.Recompensa.WARPS);
 	}
 
 	public int getMaxChests() {
@@ -1637,8 +1722,9 @@ public class Team {
 	}
 
 	public int getTeamLimit() {
+		int base;
 		if (!Main.plugin.getConfig().getBoolean("permissionLevels") || Main.perms == null) {
-			return getLevelObject().getTeamLimit();
+			base = getLevelObject().getTeamLimit();
 		} else {
 
 			int limit = 1;
@@ -1655,8 +1741,17 @@ public class Team {
 				}
 
 			}
-			return limit;
+			base = limit;
 		}
+
+		// Luniatic: los hitos suman por encima del limite, venga del nivel o del permiso.
+		// El bonus se aplica a las dos ramas a proposito: si solo se sumara a una, encender
+		// permissionLevels le sacaria en silencio a cada clan lo que ya se habia ganado.
+		if (base == -1 || Main.plugin.getHitosManager() == null) {
+			return base;
+		}
+		return base + Main.plugin.getHitosManager()
+				.bonus(getID(), com.booksaw.betterTeams.luniatic.hitos.Recompensa.LUGARES);
 	}
 
 	public boolean isTeamFull() {

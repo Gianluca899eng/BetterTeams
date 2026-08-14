@@ -13,7 +13,7 @@ import java.lang.reflect.Method;
  * <p><b>Solo lee.</b> El duelo ya no le toca el toggle a nadie: destapar el dano entre
  * rivales alcanza, y el {@code /pvp} del jugador tiene que seguir diciendo lo que el
  * eligio. Esto existe unicamente para que el scoreboard sepa como pintar el estado —un
- * {@code ᴏꜰꜰ} amarillo cuando estas en guerra significa "lo tenes apagado, pero tu rival
+ * {@code ᴏꜰꜰ} amarillo cuando estas en duelo significa "lo tienes apagado, pero tu rival
  * igual te puede pegar".
  *
  * <p><b>Por reflexion y no por dependencia.</b> Compilar contra PvPManager lo ataria al

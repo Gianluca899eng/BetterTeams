@@ -6,6 +6,10 @@ import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -57,23 +61,43 @@ public final class DuelosGuardados {
 			yaml.set(base + ".objetivo-bajas", duelo.getObjetivoBajas());
 			yaml.set(base + ".bajas-a", duelo.getBajasA());
 			yaml.set(base + ".bajas-b", duelo.getBajasB());
+			// Los participantes se congelan al arrancar, asi que hay que guardarlos: sin
+			// esto un reinicio volveria a meter en el duelo a los que se habian bajado.
+			yaml.set(base + ".participantes", aTexto(duelo.getParticipantes()));
 		}
 
-		try {
-			File destino = archivo();
-			if (duelos.isEmpty()) {
-				// Sin nada que guardar, se borra: un archivo con una lista vacia hace
-				// dudar de si el sistema guardo o no.
-				if (destino.exists() && !destino.delete()) {
-					Main.plugin.getLogger().warning("No pude borrar " + ARCHIVO);
-				}
-				return;
+		File destino = archivo();
+		if (duelos.isEmpty()) {
+			// Sin nada que guardar, se borra: un archivo con una lista vacia hace
+			// dudar de si el sistema guardo o no.
+			if (destino.exists() && !destino.delete()) {
+				Main.plugin.getLogger().warning("No pude borrar " + ARCHIVO);
 			}
-			yaml.save(destino);
+			return;
+		}
+
+		// Temporal y despues mover: yaml.save() trunca el archivo antes de llenarlo, asi que
+		// un corte en el medio dejaba duelos.yml vacio o a medias. Lo que se pierde ahi no es
+		// un dato cosmetico, es el pozo retenido de todos los duelos abiertos.
+		File temporal = new File(destino.getParentFile(), ARCHIVO + ".tmp");
+		try {
+			yaml.save(temporal);
+			Path tmp = temporal.toPath();
+			Path fin = destino.toPath();
+			try {
+				Files.move(tmp, fin, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+			} catch (AtomicMoveNotSupportedException noAtomico) {
+				Files.move(tmp, fin, StandardCopyOption.REPLACE_EXISTING);
+			}
 		} catch (IOException e) {
 			// Que no se pueda guardar no puede tumbar el servidor, pero tiene que
 			// gritar: el pozo de los duelos abiertos depende de esto.
 			Main.plugin.getLogger().severe("No pude guardar los duelos en curso: " + e.getMessage());
+			try {
+				Files.deleteIfExists(temporal.toPath());
+			} catch (IOException ignorado) {
+				// el temporal huerfano lo pisa el proximo guardado
+			}
 		}
 	}
 
@@ -111,6 +135,11 @@ public final class DuelosGuardados {
 				clanB, aUuids(s.getStringList("bando-b")),
 				s.getDouble("apuesta"), s.getLong("fin-millis"),
 				s.getLong("duracion-millis"), s.getInt("objetivo-bajas"));
+		// La clave puede faltar (duelo guardado antes de que existieran las preferencias) y
+		// eso NO es lo mismo que una lista vacia, que significa que no participa nadie.
+		if (s.contains("participantes")) {
+			duelo.congelarParticipantes(aUuids(s.getStringList("participantes")));
+		}
 		duelo.reponerBajas(s.getInt("bajas-a"), s.getInt("bajas-b"));
 		return duelo;
 	}

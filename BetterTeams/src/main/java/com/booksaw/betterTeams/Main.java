@@ -85,6 +85,12 @@ public class Main extends JavaPlugin {
 	/** Duelos pactados entre clanes. Apagado salvo que se encienda en el config. */
 	@Getter
 	public DueloManager dueloManager;
+	/** El icono con el que cada clan se muestra en el menu. */
+	@Getter
+	public com.booksaw.betterTeams.luniatic.ClanIconos clanIconos;
+	/** Bloques minados por cada clan, y lo que cada hito habilita al alcanzarse. */
+	@Getter
+	public com.booksaw.betterTeams.luniatic.hitos.HitosManager hitosManager;
 	public ChatManagement chatManagement;
 	public WorldGuardManagerV7 wgManagement;
 	@Getter
@@ -211,6 +217,12 @@ public class Main extends JavaPlugin {
 		// reinicio no termina un duelo. El pozo queda retenido igual que el duelo.
 		if (dueloManager != null) {
 			dueloManager.guardarYSoltar();
+		}
+
+		// Antes de cancelar las tareas, porque la que vuelca el contador es una de ellas: sin
+		// esto se perderia hasta un ciclo entero de bloques minados en cada reinicio.
+		if (hitosManager != null) {
+			hitosManager.guardarSiCambio();
 		}
 
 		if (extensionManager != null) {
@@ -374,6 +386,9 @@ public class Main extends JavaPlugin {
 
 	public void setupCommands() {
 		dueloManager = new DueloManager(getConfig().getConfigurationSection("duelo"));
+		clanIconos = new com.booksaw.betterTeams.luniatic.ClanIconos();
+		hitosManager = new com.booksaw.betterTeams.luniatic.hitos.HitosManager(
+				getConfig().getConfigurationSection("hitos"));
 		teamCommand = new PermissionParentCommand(new CostManager("team"), new CooldownManager("team"), "team");
 		// add all sub commands here
 		teamCommand.addSubCommands(new CreateCommand(teamCommand), new LeaveCommand(), new DisbandCommand(),
@@ -395,8 +410,19 @@ public class Main extends JavaPlugin {
 
 		if (dueloManager.isHabilitado()) {
 			teamCommand.addSubCommand(new DueloCommand(dueloManager));
+			// Aparte de /team duelo porque es de rango DEFAULT: pactar el duelo es del
+			// lider, elegir si la peleas es de cada uno.
+			teamCommand.addSubCommand(
+					new com.booksaw.betterTeams.luniatic.duelo.PreferenciasCommand(dueloManager));
 		}
 
+		teamCommand.addSubCommand(new com.booksaw.betterTeams.luniatic.IconoCommand(clanIconos));
+		if (hitosManager.isHabilitado()) {
+			// Solo si hay hitos cargados: con el sistema apagado el comando mostraria una
+			// lista vacia, que se lee como que algo se rompio.
+			teamCommand.addSubCommand(
+					new com.booksaw.betterTeams.luniatic.hitos.HitosCommand(hitosManager));
+		}
 		teamCommand.addSubCommand(new MenuCommand());
 		// /team pelado abre el menu en vez de escupir la ayuda.
 		teamCommand.setSubcomandoPorDefecto("menu");
@@ -409,10 +435,12 @@ public class Main extends JavaPlugin {
 		chest.addSubCommands(new ChestClaimCommand(), new ChestRemoveCommand(), new ChestRemoveallCommand(), new ChestCheckCommand());
 		teamCommand.addSubCommand(chest);
 
-		teamBooksawCommand = new BooksawCommand("team", teamCommand, "betterteams.standard", "All commands for teams",
-				getConfig().getStringList("command.team"));
+		// El comando es /clan, no /team: en Luniatic son clanes, y el nombre en ingles no
+		// lo escribe nadie. Los alias salen de command.clan del config.
+		teamBooksawCommand = new BooksawCommand("clan", teamCommand, "betterteams.standard", "Comandos de clan",
+				getConfig().getStringList("command.clan"));
 
-		teamaCommand = new ParentCommand("teamadmin");
+		teamaCommand = new ParentCommand("clanadmin");
 
 		teamaCommand.addSubCommands(new ReloadTeama(), new ChatSpyTeama(), new TitleTeama(),
 				new VersionTeama("version"), new VersionTeama("debug"), new HomeTeama(), new NameTeama(),
@@ -422,6 +450,20 @@ public class Main extends JavaPlugin {
 				new SetrankTeama(teamaCommand), new TagTeama(), new TeleportTeama(teamaCommand), new AllyTeama(),
 				new NeutralTeama(), new ImportmessagesTeama());
 
+
+		if (dueloManager != null && dueloManager.isHabilitado()) {
+			// Herramienta de staff: sumar a alguien al duelo que ya empezo, para el que
+			// se olvido de anotarse. Los participantes se congelan al arrancar a proposito,
+			// asi que sin esto la unica salida seria esperar a la proxima.
+			teamaCommand.addSubCommand(
+					new com.booksaw.betterTeams.luniatic.duelo.DueloTeama(dueloManager));
+		}
+
+		if (hitosManager.isHabilitado()) {
+			// Sin esto no hay forma de probar un desbloqueo salvo minando cien mil bloques.
+			teamaCommand.addSubCommand(
+					new com.booksaw.betterTeams.luniatic.hitos.HitosTeama(hitosManager));
+		}
 
 		if (getConfig().getBoolean("anchor.enable")) {
 			teamaCommand.addSubCommands(new AnchorTeama(), new SetAnchorTeama());
@@ -459,8 +501,8 @@ public class Main extends JavaPlugin {
 					new WithdrawCommand(teamCommand));
 		}
 
-		new BooksawCommand("teamadmin", teamaCommand, "betterteams.admin", "All admin commands for teams",
-				getConfig().getStringList("command.teama"));
+		new BooksawCommand("clanadmin", teamaCommand, "betterteams.admin", "Comandos de clan para el staff",
+				getConfig().getStringList("command.clanadmin"));
 
 	}
 
@@ -486,15 +528,49 @@ public class Main extends JavaPlugin {
 		}
 
 
+		if (hitosManager != null && hitosManager.isHabilitado()) {
+			getServer().getPluginManager().registerEvents(
+					new com.booksaw.betterTeams.luniatic.hitos.HitosListener(hitosManager), this);
+			// El contador se toca en memoria en cada bloque roto; a disco baja una sola vez
+			// cada tantos segundos, y solo si cambio algo. Escribir por bloque seria un
+			// archivo entero reescrito varias veces por segundo.
+			long periodo = hitosManager.getGuardadoSegundos() * 20L;
+			foliaLib.getScheduler().runTimer(task -> hitosManager.guardarSiCambio(), periodo, periodo);
+		}
+
 		if (dueloManager != null && dueloManager.isHabilitado()) {
+			// La guarda de regiones se crea una sola vez y la comparten todas las reglas del
+			// duelo: el destapado de dano, el corte de vuelo, la regla de aparicion y el
+			// cartel del scoreboard. Sin WorldGuard queda en null y cada regla que la
+			// necesite se apaga sola.
+			if (getServer().getPluginManager().getPlugin("WorldGuard") != null) {
+				dueloManager.setGuardia(new com.booksaw.betterTeams.luniatic.duelo.GuardiaRegion(
+						dueloManager.isPisaClaims()));
+			}
 			// Una sola tarea cada 10 s para los vencimientos: nada por jugador ni por tick.
 			foliaLib.getScheduler().runTimer(task -> dueloManager.revisar(), 200L, 200L);
 			getServer().getPluginManager().registerEvents(new DueloDeathListener(dueloManager), this);
+			// La advertencia y el libro de los que estaban desconectados cuando empezo la
+			// duelo. Se registra siempre: puede haber pendientes de una sesion anterior.
+			getServer().getPluginManager().registerEvents(
+					new com.booksaw.betterTeams.luniatic.duelo.DueloEntradaListener(dueloManager), this);
+			if (dueloManager.hayBloqueosDeAparicion()) {
+				// Impide volver al lado de una base rival: teletransporte, cama y /sethome.
+				getServer().getPluginManager().registerEvents(
+						new com.booksaw.betterTeams.luniatic.duelo.DueloAparicionListener(dueloManager), this);
+			}
 			if (dueloManager.isPisaPvpIndividual()) {
 				// Solo el listener de dano. El duelo ya no prende ni bloquea el toggle de
 				// PvPManager: destapar el dano entre rivales alcanza, y el /pvp del
 				// jugador queda diciendo la verdad sobre lo que el eligio.
-				getServer().getPluginManager().registerEvents(new DueloDamageListener(dueloManager), this);
+				DueloDamageListener dano = new DueloDamageListener(dueloManager);
+				getServer().getPluginManager().registerEvents(dano, this);
+				if (dueloManager.isDebug()) {
+					// El vigilante de la ultima palabra solo sirve para depurar y se cuelga del
+					// evento de dano sin ignoreCancelled: registrarlo siempre seria un despacho
+					// mas por cada golpe del servidor, granjas incluidas.
+					getServer().getPluginManager().registerEvents(dano.vigilante(), this);
+				}
 			}
 			if (dueloManager.hayComandosBloqueados()) {
 				// Corta /dback y /back en duelo. Al morir se pierde el tag de combate de
@@ -506,15 +582,49 @@ public class Main extends JavaPlugin {
 				dueloManager.setBarra(barra);
 				getServer().getPluginManager().registerEvents(barra, this);
 			}
-			if (placeholderAPI) {
-				new DueloPlaceholders(dueloManager).register();
-			}
 			// Ultimo, con la barra ya puesta: los duelos que sobrevivieron al reinicio
 			// tienen que volver con su barra dibujada, no aparecer recien en la primera
 			// pelea.
 			dueloManager.cargar();
 			getLogger().info("Duelos pactados: activos"
 					+ (dueloManager.isPisaPvpIndividual() ? ", con override de PvP." : "."));
+		}
+
+		// 🔑 La expansion de placeholders se registra SIEMPRE, y esto estaba adentro del
+		// bloque de arriba. O sea que apagar los duelos —que es como se planea abrir— se
+		// llevaba puesta la expansion entera, y con ella dos cosas que no son del duelo:
+		// la linea de PvP del scoreboard, que la ve todo el servidor, y la etiqueta del
+		// clan del nombre flotante. Las dos habrian salido escritas como %placeholder%.
+		// La clase ya se banca los duelos apagados: corta en isHabilitado().
+		if (placeholderAPI && dueloManager != null) {
+			new DueloPlaceholders(dueloManager).register();
+		}
+
+		// Icono y color propios para cada clan nuevo, sin que nadie los elija.
+		getServer().getPluginManager().registerEvents(
+				new com.booksaw.betterTeams.luniatic.ClanIdentidad(clanIconos), this);
+
+		// Permiso luniatic.clan para los que estan en un clan. Es lo que deja gatear las
+		// misiones de clan de Quests, que solo sabe pedir permisos.
+		com.booksaw.betterTeams.luniatic.ClanPermiso clanPermiso =
+				new com.booksaw.betterTeams.luniatic.ClanPermiso(this);
+		getServer().getPluginManager().registerEvents(clanPermiso, this);
+		clanPermiso.actualizarATodos();
+
+		// Expone los clanes como "party" para que Quests comparta el progreso de una mision
+		// entre los miembros. Quests lo busca por este tipo en el ServicesManager.
+		//
+		// Se avisa por consola a proposito: si esto falla, las misiones de clan vuelven a ser
+		// individuales sin ningun error visible. Ver docs/clanes.md 4.1.
+		try {
+			getServer().getServicesManager().register(
+					me.pikamug.unite.api.objects.PartyProvider.class,
+					new com.booksaw.betterTeams.luniatic.ClanPartyProvider(this),
+					this, org.bukkit.plugin.ServicePriority.Normal);
+			getLogger().info("Clanes expuestos como party: las misiones de clan comparten progreso.");
+		} catch (Throwable t) {
+			getLogger().severe("No se pudo registrar el proveedor de party: las misiones de "
+					+ "clan van a contar por jugador y no por clan. Causa: " + t);
 		}
 
 		getServer().getPluginManager().registerEvents(new MenuListener(), this);

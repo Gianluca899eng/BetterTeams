@@ -38,15 +38,23 @@ public class DueloDeathListener implements Listener {
 		Team clanCaido = Team.getTeam(caido);
 		Team clanAsesino = asesino == null ? null : Team.getTeam(asesino);
 
+		// Los dos tienen que estar adentro del duelo: una caida donde alguno se bajo no
+		// es una baja del duelo, asi que no mueve el marcador ni corta el regreso. Se
+		// resuelve sobre el duelo del caido para no volver a recorrer los clanes.
+		Duelo duelo = manager.getDuelo(clanCaido);
 		boolean porRival = asesino != null && !asesino.equals(caido)
 				&& clanCaido != null && clanAsesino != null
-				&& manager.sonRivales(clanCaido, clanAsesino);
+				&& manager.sonRivales(clanCaido, clanAsesino)
+				&& duelo != null
+				&& duelo.esParticipante(caido.getUniqueId())
+				&& duelo.esParticipante(asesino.getUniqueId());
 
 		// El regreso se bloquea por dos motivos, no uno: que te haya matado el rival, o
 		// que hayas caido pegado a su base. Sin lo segundo el atajo era obvio: tirarse a
 		// la lava adentro de la base enemiga para conservar el /dback.
 		boolean bloquearRegreso = porRival
-				|| (clanCaido != null && manager.cercaDeBaseRival(caido.getLocation(), clanCaido));
+				|| (duelo != null && duelo.esParticipante(caido.getUniqueId())
+						&& manager.cercaDeBaseRival(caido.getLocation(), clanCaido));
 
 		// Se anota SIEMPRE, tambien cuando no aplica: la marca describe la ultima caida,
 		// asi que morir despues lejos y de otra forma la levanta. Y se anota antes del

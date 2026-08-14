@@ -29,15 +29,28 @@ public class Utils {
 	 * @return The offlinePlayer object
 	 */
 	public static @Nullable OfflinePlayer getOfflinePlayer(String name) {
+		// Un jugador conectado se resuelve por su nombre exacto y no se pregunta nada mas. Sin
+		// esto quedaba a merced de hasPlayedBefore(), que mira el archivo de datos del UUID que
+		// haya resuelto Bukkit; con online-mode apagado ese UUID no siempre es el mismo con el que
+		// entro, y entonces un jugador que estaba parado al lado "no existia".
+		Player conectado = Bukkit.getPlayerExact(name);
+		if (conectado != null) {
+			return conectado;
+		}
+
 		@SuppressWarnings("deprecation")
 		OfflinePlayer player = Bukkit.getOfflinePlayer(name);
 
 		if (!player.hasPlayedBefore()) {
 			for (Team team : Team.getTeamManager().getLoadedTeamListClone().values()) {
-				for (OfflinePlayer offlinePlayer : team.getMembers().getOfflinePlayers()) {
-					String offlinePlayerName = offlinePlayer.getName();
-					if (offlinePlayerName != null && offlinePlayerName.equalsIgnoreCase(name)) {
-						return offlinePlayer;
+				// TODOS los miembros, no solo los desconectados: getOfflinePlayers() filtra por
+				// "no conectado", asi que este rescate —que existe justamente para encontrar a
+				// alguien por nombre— era incapaz de encontrar a quien estuviera jugando.
+				for (TeamPlayer teamPlayer : team.getMembers().getClone()) {
+					OfflinePlayer miembro = teamPlayer.getPlayer();
+					String nombreMiembro = miembro.getName();
+					if (nombreMiembro != null && nombreMiembro.equalsIgnoreCase(name)) {
+						return miembro;
 					}
 				}
 			}

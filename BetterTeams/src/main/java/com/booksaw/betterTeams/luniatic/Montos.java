@@ -3,7 +3,7 @@ package com.booksaw.betterTeams.luniatic;
 import java.math.BigDecimal;
 
 /**
- * Montos de plata escritos como los escribe un jugador.
+ * Montos de dinero escritos como los escribe un jugador.
  *
  * <p>Resuelve dos cosas distintas que se cruzan:
  *
@@ -12,7 +12,7 @@ import java.math.BigDecimal;
  * {@code 1,000.50}. Si hay coma, la coma es el decimal y los puntos son de miles; si
  * no hay coma, el punto es el decimal, que es lo que espera {@code BigDecimal}.
  * <li><b>El sufijo de escala.</b> {@code 30k}, {@code 1,5m}, {@code 2b}. Nadie quiere
- * escribir 30000 en el chat, y menos con la plata de un duelo de por medio.
+ * escribir 30000 en el chat, y menos con el dinero de un duelo de por medio.
  * </ul>
  *
  * <p>Devuelve una cadena lista para {@code new BigDecimal(...)}. No parsea a

@@ -8,7 +8,7 @@ import org.bukkit.entity.Player;
 import java.util.List;
 
 /**
- * /team menu [texto] - abre el menu de clanes, opcionalmente filtrado por nombre.
+ * /clan menu [texto] - abre el menu de clanes, opcionalmente filtrado por nombre.
  *
  * <p>La busqueda va como argumento y no como menu de escritura a proposito: los
  * menus tipo yunque son de lo que peor funciona por Geyser, y Bedrock es una parte

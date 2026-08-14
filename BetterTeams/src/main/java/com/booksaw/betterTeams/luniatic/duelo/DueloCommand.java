@@ -13,11 +13,11 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * /team duelo &lt;clan&gt; &lt;apuesta&gt; [duracion] - desafia a otro clan
- * /team duelo aceptar &lt;clan&gt; - acepta el desafio que te mandaron, con sus condiciones
- * /team duelo rechazar &lt;clan&gt; - lo rechaza
- * /team duelo estado - muestra el duelo en curso
- * /team duelo rendirse - se rinde y le deja el pozo al rival
+ * /clan duelo &lt;clan&gt; &lt;apuesta&gt; [duracion] - desafia a otro clan
+ * /clan duelo aceptar &lt;clan&gt; - acepta el desafio que te mandaron, con sus condiciones
+ * /clan duelo rechazar &lt;clan&gt; - lo rechaza
+ * /clan duelo estado - muestra el duelo en curso
+ * /clan duelo rendirse - se rinde y le deja el pozo al rival
  *
  * <p>Repetir el comando de desafio con el mismo monto tambien acepta, y se deja andando
  * por si alguien lo tiene en la memoria. Pero la via buena es {@code aceptar}: el desafio
